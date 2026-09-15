@@ -1,0 +1,94 @@
+#include "polomodoro/SettingsStore.h"
+
+#include "polomodoro/DatabaseManager.h"
+
+#include <QSqlQuery>
+
+namespace polomodoro {
+
+struct SettingsStore::Impl {
+    DatabaseManager &db;
+};
+
+SettingsStore::SettingsStore(DatabaseManager &db) : d(std::make_unique<Impl>(Impl{db})) {}
+SettingsStore::~SettingsStore() = default;
+
+void SettingsStore::seedDefaults()
+{
+    const auto ensure = [this](const QString &key, const QString &value) {
+        QSqlQuery q(d->db.database());
+        q.prepare(QStringLiteral("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)"));
+        q.addBindValue(key);
+        q.addBindValue(value);
+        q.exec();
+    };
+
+    ensure(QStringLiteral("pomodoroWorkMs"), QStringLiteral("1500000"));
+    ensure(QStringLiteral("pomodoroShortBreakMs"), QStringLiteral("300000"));
+    ensure(QStringLiteral("pomodoroLongBreakMs"), QStringLiteral("900000"));
+    ensure(QStringLiteral("pomodoroCyclesBeforeLongBreak"), QStringLiteral("4"));
+    ensure(QStringLiteral("backgroundRotationSec"), QStringLiteral("300"));
+    ensure(QStringLiteral("backgroundUserPath"), QString());
+    ensure(QStringLiteral("backgroundSource"), QStringLiteral("wallpaper"));
+    ensure(QStringLiteral("spotifyArtFallbackToWallpaper"), QStringLiteral("true"));
+    ensure(QStringLiteral("alwaysOnTop"), QStringLiteral("false"));
+    ensure(QStringLiteral("viewMode"), QStringLiteral("expanded"));
+    ensure(QStringLiteral("pipAutoAlwaysOnTop"), QStringLiteral("true"));
+    ensure(QStringLiteral("barAutoAlwaysOnTop"), QStringLiteral("true"));
+    ensure(QStringLiteral("barDropdownExpanded"), QStringLiteral("false"));
+    ensure(QStringLiteral("autoCompactOnResize"), QStringLiteral("false"));
+    ensure(QStringLiteral("expandedGeometry"), QStringLiteral("-1,-1,1280,800"));
+    ensure(QStringLiteral("barGeometry"), QStringLiteral("-1,-1,800,48"));
+    ensure(QStringLiteral("compactGeometry"), QStringLiteral("-1,-1,300,140"));
+    ensure(QStringLiteral("defaultTargetMs"), QStringLiteral("0"));
+    ensure(QStringLiteral("targetProgressBasis"), QStringLiteral("active"));
+    ensure(QStringLiteral("notifyOnTargetReached"), QStringLiteral("true"));
+    ensure(QStringLiteral("notifyOnTaskStart"), QStringLiteral("true"));
+    ensure(QStringLiteral("notifyOnEndDateApproaching"), QStringLiteral("true"));
+}
+
+QString SettingsStore::getString(const QString &key, const QString &defaultValue) const
+{
+    QSqlQuery q(d->db.database());
+    q.prepare(QStringLiteral("SELECT value FROM settings WHERE key=?"));
+    q.addBindValue(key);
+    if (q.exec() && q.next())
+        return q.value(0).toString();
+    return defaultValue;
+}
+
+int SettingsStore::getInt(const QString &key, int defaultValue) const
+{
+    const QString v = getString(key);
+    return v.isEmpty() ? defaultValue : v.toInt();
+}
+
+bool SettingsStore::getBool(const QString &key, bool defaultValue) const
+{
+    const QString v = getString(key);
+    if (v.isEmpty())
+        return defaultValue;
+    return v == QStringLiteral("true") || v == QStringLiteral("1");
+}
+
+void SettingsStore::setString(const QString &key, const QString &value)
+{
+    QSqlQuery q(d->db.database());
+    q.prepare(QStringLiteral("INSERT INTO settings(key, value) VALUES(?, ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value=excluded.value"));
+    q.addBindValue(key);
+    q.addBindValue(value);
+    q.exec();
+}
+
+void SettingsStore::setInt(const QString &key, int value)
+{
+    setString(key, QString::number(value));
+}
+
+void SettingsStore::setBool(const QString &key, bool value)
+{
+    setString(key, value ? QStringLiteral("true") : QStringLiteral("false"));
+}
+
+} // namespace polomodoro

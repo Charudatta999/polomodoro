@@ -1,0 +1,5 @@
+build/
+.cache/
+*.user
+*.autosave
+compile_commands.json

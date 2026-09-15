@@ -1,0 +1,24 @@
+<RCC>
+    <qresource prefix="/">
+        <file>sql/001_initial.sql</file>
+    </qresource>
+    <qresource prefix="/qml">
+        <file alias="main.qml">../qml/main.qml</file>
+        <file alias="Theme.qml">../qml/Theme.qml</file>
+        <file alias="windows/MainWindow.qml">../qml/windows/MainWindow.qml</file>
+        <file alias="windows/CompactView.qml">../qml/windows/CompactView.qml</file>
+        <file alias="windows/ProgressBarView.qml">../qml/windows/ProgressBarView.qml</file>
+        <file alias="components/TimerRing.qml">../qml/components/TimerRing.qml</file>
+        <file alias="components/ActiveTasksBar.qml">../qml/components/ActiveTasksBar.qml</file>
+        <file alias="components/TaskMenuDrawer.qml">../qml/components/TaskMenuDrawer.qml</file>
+        <file alias="components/TaskRow.qml">../qml/components/TaskRow.qml</file>
+        <file alias="components/TaskEditor.qml">../qml/components/TaskEditor.qml</file>
+        <file alias="components/BackgroundView.qml">../qml/components/BackgroundView.qml</file>
+        <file alias="components/SpotifyDrawer.qml">../qml/components/SpotifyDrawer.qml</file>
+        <file alias="components/SpotifyMediaControls.qml">../qml/components/SpotifyMediaControls.qml</file>
+        <file alias="components/OverallProgressBar.qml">../qml/components/OverallProgressBar.qml</file>
+        <file alias="components/SubtaskProgressDropdown.qml">../qml/components/SubtaskProgressDropdown.qml</file>
+        <file alias="components/ChromeButton.qml">../qml/components/ChromeButton.qml</file>
+        <file alias="components/WindowChrome.qml">../qml/components/WindowChrome.qml</file>
+    </qresource>
+</RCC>
