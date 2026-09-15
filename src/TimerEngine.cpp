@@ -15,6 +15,7 @@ struct TimerEngine::Impl {
     qint64 longBreakMs = 15 * 60 * 1000;
     int cyclesBeforeLongBreak = 4;
     int completedWorkCycles = 0;
+    bool wasStarted = false;
 };
 
 TimerEngine::TimerEngine() : d(std::make_unique<Impl>()) {}
@@ -23,9 +24,22 @@ TimerEngine::~TimerEngine() = default;
 TimerMode TimerEngine::mode() const { return d->mode; }
 PomodoroPhase TimerEngine::phase() const { return d->phase; }
 bool TimerEngine::isRunning() const { return d->running; }
+bool TimerEngine::wasStarted() const { return d->wasStarted; }
 qint64 TimerEngine::remainingMs() const { return d->remainingMs; }
 qint64 TimerEngine::elapsedMs() const { return d->elapsedMs; }
 int TimerEngine::completedWorkCycles() const { return d->completedWorkCycles; }
+
+qint64 TimerEngine::phaseDurationMs() const
+{
+    if (d->mode == TimerMode::Stopwatch)
+        return 60 * 60 * 1000;
+    switch (d->phase) {
+    case PomodoroPhase::Work: return d->workMs;
+    case PomodoroPhase::ShortBreak: return d->shortBreakMs;
+    case PomodoroPhase::LongBreak: return d->longBreakMs;
+    }
+    return d->workMs;
+}
 
 void TimerEngine::setMode(TimerMode mode)
 {
@@ -43,12 +57,17 @@ void TimerEngine::setPomodoroDurations(qint64 workMs, qint64 shortBreakMs, qint6
         d->remainingMs = workMs;
 }
 
-void TimerEngine::start() { d->running = true; }
+void TimerEngine::start()
+{
+    d->running = true;
+    d->wasStarted = true;
+}
 void TimerEngine::pause() { d->running = false; }
 
 void TimerEngine::reset()
 {
     d->running = false;
+    d->wasStarted = false;
     d->elapsedMs = 0;
     d->completedWorkCycles = 0;
     d->phase = PomodoroPhase::Work;

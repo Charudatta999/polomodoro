@@ -2,6 +2,8 @@
 
 #include "polomodoro/TaskTree.h"
 
+#include <QDateTime>
+
 namespace polomodoro {
 
 TaskTreeModel::TaskTreeModel(TaskTree &tree, QObject *parent)
@@ -13,6 +15,15 @@ void TaskTreeModel::setBucketFilter(const QString &bucket)
 {
     beginResetModel();
     m_bucketFilter = bucket.toLower();
+    m_activeSubtree = false;
+    rebuild();
+    endResetModel();
+}
+
+void TaskTreeModel::setActiveSubtreeFilter(bool enabled)
+{
+    beginResetModel();
+    m_activeSubtree = enabled;
     rebuild();
     endResetModel();
 }
@@ -41,7 +52,7 @@ void TaskTreeModel::rebuild()
     else if (m_bucketFilter == QStringLiteral("active"))
         bucket = TaskListBucket::Active;
 
-    const auto tasks = m_tree.tasksInBucket(bucket);
+    const auto tasks = m_activeSubtree ? m_tree.activeSubtree() : m_tree.tasksInBucket(bucket);
     for (const TaskNode *node : tasks) {
         FlatRow row;
         row.tree = &m_tree;
@@ -120,6 +131,43 @@ QVariant TaskTreeModel::data(const QModelIndex &idx, int role) const
     case HasTargetRole: return node->targetMs > 0;
     case TargetReachedRole: return node->targetReachedAt.isValid();
     case DepthRole: return m_rows.at(idx.row()).depth;
+    case ProgressLabelRole: {
+        const qint64 ms = m_tree.progressMs(*node, m_progressBasis);
+        const qint64 sec = ms / 1000;
+        const qint64 h = sec / 3600;
+        const qint64 m = (sec % 3600) / 60;
+        const qint64 s = sec % 60;
+        if (h > 0)
+            return QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QChar('0')).arg(s, 2, 10, QChar('0'));
+        return QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QChar('0'));
+    }
+    case OverflowRatioRole: {
+        if (node->targetMs <= 0)
+            return 0.0;
+        const double ratio = m_tree.progressRatio(*node, m_progressBasis);
+        return qMax(0.0, ratio - 1.0);
+    }
+    case OverTargetRole:
+        return node->targetMs > 0 && m_tree.progressRatio(*node, m_progressBasis) > 1.0;
+    case BadgeTextRole: {
+        if (node->targetMs > 0) {
+            const qint64 remaining = qMax<qint64>(0, node->targetMs - m_tree.progressMs(*node, m_progressBasis));
+            const qint64 sec = remaining / 1000;
+            return QStringLiteral("%1m left").arg((sec + 59) / 60);
+        }
+        return QString();
+    }
+    case StartableRole:
+        return node->status == TaskStatus::Idle || node->status == TaskStatus::Stopped;
+    case OverdueRole:
+        return node->scheduledEndAt.isValid() && node->scheduledEndAt < QDateTime::currentDateTimeUtc()
+               && node->status != TaskStatus::Completed;
+    case StartsAtLabelRole:
+        return node->scheduledStartAt.isValid() ? node->scheduledStartAt.toLocalTime().toString(Qt::ISODate) : QString();
+    case HasChildrenRole:
+        return !node->children.isEmpty();
+    case HasPrevSiblingRole:
+        return false;
     case Qt::DisplayRole: return node->title;
     default: return {};
     }
@@ -128,7 +176,7 @@ QVariant TaskTreeModel::data(const QModelIndex &idx, int role) const
 QHash<int, QByteArray> TaskTreeModel::roleNames() const
 {
     return {
-        {IdRole, "taskId"},
+        {IdRole, "id"},
         {TitleRole, "title"},
         {StatusRole, "status"},
         {IsActiveRole, "isActive"},
@@ -144,6 +192,15 @@ QHash<int, QByteArray> TaskTreeModel::roleNames() const
         {HasTargetRole, "hasTarget"},
         {TargetReachedRole, "targetReached"},
         {DepthRole, "depth"},
+        {ProgressLabelRole, "progressLabel"},
+        {OverflowRatioRole, "overflowRatio"},
+        {OverTargetRole, "overTarget"},
+        {BadgeTextRole, "badgeText"},
+        {StartableRole, "startable"},
+        {OverdueRole, "overdue"},
+        {StartsAtLabelRole, "startsAtLabel"},
+        {HasChildrenRole, "hasChildren"},
+        {HasPrevSiblingRole, "hasPrevSibling"},
     };
 }
 

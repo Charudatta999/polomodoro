@@ -1,71 +1,68 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
+import Polomodoro
 
+// The only place the main window shows tasks. Pause/Stop are ALWAYS visible
+// here (unlike TaskRow): the strip exists to make those two reachable.
 Rectangle {
-    radius: 10
-    color: "#5512121f"
-    border.color: "#22ffffff"
-    implicitHeight: 44
+    id: root
+    implicitHeight: flow.implicitHeight + Theme.md * 2
+    color: Qt.rgba(0.078, 0.086, 0.106, Theme.panelOpacity)
+    border.color: Theme.panelBorder
+    border.width: 1
+    radius: Theme.rPanel
 
-    RowLayout {
+    Flow {
+        id: flow
         anchors.fill: parent
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
-        spacing: 10
+        anchors.margins: Theme.md
+        spacing: Theme.sm
 
-        Label {
-            text: "Active"
-            color: "#8888a0"
+        Text {
+            text: "ACTIVE"
+            font.family: Theme.monoFamily
             font.pixelSize: 11
-            font.weight: Font.DemiBold
+            font.letterSpacing: 1.8
+            color: Qt.alpha(Theme.textPrimary, 0.5)
+            height: 34
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: Theme.sm - 2
+            rightPadding: Theme.sm - 2
         }
 
         Repeater {
-            model: taskController.model
-            delegate: RowLayout {
-                visible: model.isActive
-                spacing: 6
+            // Caps at 4; the remainder collapses into a +n chip.
+            model: TaskController.activeChips
+            Rectangle {
+                height: 34
+                width: chip.implicitWidth + Theme.md * 2
+                radius: Theme.rRow
+                color: Theme.surfaceRaised
+                border.width: 1
+                border.color: Theme.accent
+                Behavior on border.color { ColorAnimation { duration: Theme.dAccent } }
 
-                Rectangle {
-                    width: 6; height: 6; radius: 3
-                    color: "#7c5cff"
-                }
-
-                Label {
-                    text: model.title
-                    color: "#f0f0f5"
-                    font.pixelSize: 12
-                }
-
-                Label {
-                    text: taskController.formatDuration(model.liveElapsedMs)
-                    color: "#a0a0b8"
-                    font.family: "monospace"
-                    font.pixelSize: 11
-                }
-
-                ChromeButton {
-                    text: "Pause"
-                    implicitHeight: 26
-                    onClicked: taskController.pauseTask(model.taskId)
-                }
-                ChromeButton {
-                    text: "Stop"
-                    implicitHeight: 26
-                    onClicked: taskController.stopTask(model.taskId)
+                RowLayout {
+                    id: chip
+                    anchors.centerIn: parent
+                    spacing: Theme.sm + 1
+                    Rectangle { width: 6; height: 6; radius: 3; color: Theme.accent }
+                    Text { text: modelData.title; font.family: Theme.fontFamily; font.pixelSize: Theme.fBodyS; color: Theme.textPrimary }
+                    Text {
+                        text: modelData.liveLabel
+                        font.family: Theme.monoFamily; font.pixelSize: Theme.fNumeric
+                        color: modelData.overTarget ? Theme.overflow : Theme.accentHover
+                    }
+                    IconButton { glyph: "pause"; small: true; onClicked: TaskController.pauseTask(modelData.id) }
+                    IconButton { glyph: "stop";  small: true; onClicked: TaskController.stopTask(modelData.id) }
                 }
             }
         }
 
-        Label {
-            visible: taskController.activeTaskCount === 0
-            text: "No active tasks — open Tasks to add one"
-            color: "#666680"
-            font.pixelSize: 11
-            Layout.fillWidth: true
+        PillButton {
+            visible: TaskController.activeOverflowCount > 0
+            label: "+" + TaskController.activeOverflowCount + " more"
+            onClicked: TaskController.openDrawerOnActive()
         }
-
-        Item { Layout.fillWidth: true; visible: taskController.activeTaskCount > 0 }
     }
 }

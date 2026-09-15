@@ -2,23 +2,63 @@
     <qresource prefix="/">
         <file>sql/001_initial.sql</file>
     </qresource>
+    <qresource prefix="/wallpapers">
+        <file alias="default.png">wallpapers/default.png</file>
+    </qresource>
+    <qresource prefix="/fonts">
+        <file alias="Geist-Regular.ttf">fonts/Geist-Regular.ttf</file>
+        <file alias="GeistMono-Regular.ttf">fonts/GeistMono-Regular.ttf</file>
+    </qresource>
+    <qresource prefix="/icons">
+        <file alias="play.svg">icons/play.svg</file>
+        <file alias="pause.svg">icons/pause.svg</file>
+        <file alias="stop.svg">icons/stop.svg</file>
+        <file alias="prev.svg">icons/prev.svg</file>
+        <file alias="next.svg">icons/next.svg</file>
+        <file alias="expand.svg">icons/expand.svg</file>
+        <file alias="close.svg">icons/close.svg</file>
+        <file alias="pin.svg">icons/pin.svg</file>
+        <file alias="settings.svg">icons/settings.svg</file>
+        <file alias="reset.svg">icons/reset.svg</file>
+        <file alias="tasks.svg">icons/tasks.svg</file>
+    </qresource>
     <qresource prefix="/qml">
         <file alias="main.qml">../qml/main.qml</file>
         <file alias="Theme.qml">../qml/Theme.qml</file>
         <file alias="windows/MainWindow.qml">../qml/windows/MainWindow.qml</file>
         <file alias="windows/CompactView.qml">../qml/windows/CompactView.qml</file>
         <file alias="windows/ProgressBarView.qml">../qml/windows/ProgressBarView.qml</file>
-        <file alias="components/TimerRing.qml">../qml/components/TimerRing.qml</file>
+        <file alias="windows/StackLayoutLike.qml">../qml/windows/StackLayoutLike.qml</file>
+        <file alias="components/IconButton.qml">../qml/components/IconButton.qml</file>
+        <file alias="components/PillButton.qml">../qml/components/PillButton.qml</file>
+        <file alias="components/Divider.qml">../qml/components/Divider.qml</file>
+        <file alias="components/ModeSwitcher.qml">../qml/components/ModeSwitcher.qml</file>
+        <file alias="components/TimerDial.qml">../qml/components/TimerDial.qml</file>
         <file alias="components/ActiveTasksBar.qml">../qml/components/ActiveTasksBar.qml</file>
         <file alias="components/TaskMenuDrawer.qml">../qml/components/TaskMenuDrawer.qml</file>
         <file alias="components/TaskRow.qml">../qml/components/TaskRow.qml</file>
+        <file alias="components/TaskRowMenu.qml">../qml/components/TaskRowMenu.qml</file>
+        <file alias="components/TaskTreeView.qml">../qml/components/TaskTreeView.qml</file>
         <file alias="components/TaskEditor.qml">../qml/components/TaskEditor.qml</file>
         <file alias="components/BackgroundView.qml">../qml/components/BackgroundView.qml</file>
+        <file alias="components/BackgroundSourceToggle.qml">../qml/components/BackgroundSourceToggle.qml</file>
         <file alias="components/SpotifyDrawer.qml">../qml/components/SpotifyDrawer.qml</file>
         <file alias="components/SpotifyMediaControls.qml">../qml/components/SpotifyMediaControls.qml</file>
         <file alias="components/OverallProgressBar.qml">../qml/components/OverallProgressBar.qml</file>
         <file alias="components/SubtaskProgressDropdown.qml">../qml/components/SubtaskProgressDropdown.qml</file>
-        <file alias="components/ChromeButton.qml">../qml/components/ChromeButton.qml</file>
         <file alias="components/WindowChrome.qml">../qml/components/WindowChrome.qml</file>
+        <file alias="components/NowPlayingLabel.qml">../qml/components/NowPlayingLabel.qml</file>
+        <file alias="components/ProgressTrough.qml">../qml/components/ProgressTrough.qml</file>
+        <file alias="components/PoloTabBar.qml">../qml/components/PoloTabBar.qml</file>
+        <file alias="components/PoloToggle.qml">../qml/components/PoloToggle.qml</file>
+        <file alias="components/PoloTextField.qml">../qml/components/PoloTextField.qml</file>
+        <file alias="components/PoloComboBox.qml">../qml/components/PoloComboBox.qml</file>
+        <file alias="components/PoloSegmented.qml">../qml/components/PoloSegmented.qml</file>
+        <file alias="components/SettingsView.qml">../qml/components/SettingsView.qml</file>
+        <file alias="components/SettingRow.qml">../qml/components/SettingRow.qml</file>
+        <file alias="components/DayTimeline.qml">../qml/components/DayTimeline.qml</file>
+        <file alias="components/FieldLabel.qml">../qml/components/FieldLabel.qml</file>
+        <file alias="components/DateTimeField.qml">../qml/components/DateTimeField.qml</file>
+        <file alias="components/TargetTimeEditor.qml">../qml/components/TargetTimeEditor.qml</file>
     </qresource>
 </RCC>

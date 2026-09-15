@@ -16,8 +16,10 @@ public:
     TimerMode mode() const;
     PomodoroPhase phase() const;
     bool isRunning() const;
+    bool wasStarted() const;
     qint64 remainingMs() const;
     qint64 elapsedMs() const;
+    qint64 phaseDurationMs() const;
     int completedWorkCycles() const;
 
     void setMode(TimerMode mode);

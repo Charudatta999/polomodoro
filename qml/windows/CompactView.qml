@@ -1,45 +1,82 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
+import Polomodoro
 import "../components"
 
-Item {
-    Rectangle {
+Rectangle {
+    id: root
+    color: Qt.rgba(0.055, 0.059, 0.075, 0.94)
+    border.color: Theme.panelBorder
+    border.width: 1
+    radius: Theme.rPanel
+
+    readonly property var soleTarget: TaskController.soleTargetedActiveTask
+
+    DragHandler {
+        target: null
+        onActiveChanged: if (active && Window.window) Window.window.startSystemMove()
+    }
+    TapHandler {
+        onDoubleTapped: WindowLayoutManager.setMode(0)
+    }
+
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
-        radius: 12
-        color: "#ee12121f"
-        border.color: "#33ffffff"
+        anchors.margins: Theme.md + 2
+        spacing: Theme.sm
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.sm
+
+            Text {
+                text: TimerController.formattedTime
+                font.family: Theme.monoFamily
+                font.pixelSize: 34
+                font.weight: Font.Medium
+                font.features: { "tnum": 1 }
+                color: Theme.textPrimary
+            }
+            Item { Layout.fillWidth: true }
+            IconButton { glyph: TimerController.isRunning ? "pause" : "play"; filled: true; onClicked: TimerController.toggle() }
+            IconButton { glyph: "stop"; onClicked: TimerController.reset() }
+            IconButton { glyph: "expand"; onClicked: WindowLayoutManager.setMode(0) }
+        }
 
         ColumnLayout {
-            anchors.centerIn: parent
-            spacing: 10
-
-            Label {
-                text: timerController.formattedTime
-                font.pixelSize: 36
-                font.family: "monospace"
-                font.weight: Font.DemiBold
-                color: "#f0f0f5"
-                Layout.alignment: Qt.AlignHCenter
-            }
+            Layout.fillWidth: true
+            spacing: Theme.xs + 2
 
             RowLayout {
-                spacing: 6
-                ChromeButton { text: "Start"; onClicked: timerController.start() }
-                ChromeButton { text: "Pause"; onClicked: timerController.pause() }
-                ChromeButton { text: "Reset"; onClicked: timerController.reset() }
-                ChromeButton {
-                    text: "Expand"
-                    onClicked: windowLayout.setViewMode("expanded")
+                Layout.fillWidth: true
+                visible: !!root.soleTarget
+                Text {
+                    text: root.soleTarget ? root.soleTarget.title : ""
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fNumeric
+                    color: Theme.textDim
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Text {
+                    text: root.soleTarget ? root.soleTarget.progressLabel : ""
+                    font.family: Theme.monoFamily
+                    font.pixelSize: 11
+                    color: Theme.textDim
                 }
             }
 
-            Label {
-                text: taskController.activeTaskCount + " active tasks"
-                color: "#8888a0"
-                font.pixelSize: 11
-                Layout.alignment: Qt.AlignHCenter
+            ProgressTrough {
+                Layout.fillWidth: true
+                visible: !!root.soleTarget
+                ratio: root.soleTarget ? root.soleTarget.progressRatio : 0
+            }
+
+            Text {
+                text: TaskController.activeCount + " tasks active · " + TimerController.phaseLabel
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.fEyebrow
+                color: Theme.textFaint
             }
         }
     }

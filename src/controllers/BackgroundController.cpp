@@ -19,8 +19,15 @@ BackgroundController::BackgroundController(BackgroundManager &manager, SettingsS
 BackgroundController::~BackgroundController() = default;
 
 QString BackgroundController::currentImageUrl() const { return d->manager.currentImageUrl(); }
+QString BackgroundController::previousImageUrl() const { return d->manager.previousImageUrl(); }
+QString BackgroundController::source() const { return backgroundSource(); }
 QString BackgroundController::backgroundSource() const { return d->manager.backgroundSource(); }
 QString BackgroundController::phaseTint() const { return d->phaseTint; }
+
+void BackgroundController::setSource(const QString &source)
+{
+    setBackgroundSource(source);
+}
 
 void BackgroundController::setBackgroundSource(const QString &source)
 {
@@ -33,6 +40,11 @@ void BackgroundController::setPhaseTint(const QString &tint)
 {
     d->phaseTint = tint;
     emit backgroundChanged();
+}
+
+void BackgroundController::cycleSource()
+{
+    cycleBackgroundSource();
 }
 
 void BackgroundController::cycleBackgroundSource()

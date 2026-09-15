@@ -1,169 +1,80 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
+import Polomodoro
 import "../components"
 
-ApplicationWindow {
+Item {
     id: root
-    visible: true
-    color: "#12121f"
-    title: "Polomodoro"
-    flags: windowLayout.alwaysOnTop ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
+    objectName: "mainWindow"
 
-    property var geo: windowLayout.geometryForMode(windowLayout.viewMode)
-    property bool spotifyOpen: false
+    function toggleTasks() { Window.window.toggleTaskDrawer() }
+    function toggleMusic() { spotify.expanded = !spotify.expanded }
+    function newTask() { Window.window.newTask() }
+    function openSettings() { Window.window.openSettings() }
 
-    width: geo[2] > 0 ? geo[2] : 1100
-    height: geo[3] > 0 ? geo[3] : 720
-    minimumWidth: windowLayout.viewMode === "bar" ? 560 : (windowLayout.viewMode === "compact" ? 260 : 640)
-    minimumHeight: windowLayout.viewMode === "bar" ? 40 : (windowLayout.viewMode === "compact" ? 120 : 480)
-
-    Component.onCompleted: {
-        taskController.setBucketFilter("active")
-        if (geo[0] >= 0 && geo[1] >= 0) {
-            x = geo[0]
-            y = geo[1]
-        }
-    }
-
-    onClosing: windowLayout.saveGeometry(windowLayout.viewMode, x, y, width, height)
-
-    Shortcut { sequence: "Ctrl+Shift+E"; onActivated: taskController.setMenuOpen(true) }
-    Shortcut { sequence: "Ctrl+Shift+1"; onActivated: windowLayout.setViewMode("expanded") }
-    Shortcut { sequence: "Ctrl+Shift+2"; onActivated: windowLayout.setViewMode("bar") }
-    Shortcut { sequence: "Ctrl+Shift+3"; onActivated: windowLayout.setViewMode("compact") }
-    Shortcut { sequence: "Ctrl+M"; onActivated: root.spotifyOpen = !root.spotifyOpen }
-    Shortcut { sequence: "Ctrl+Shift+T"; onActivated: {
-        windowLayout.alwaysOnTop = !windowLayout.alwaysOnTop
-        settingsController.alwaysOnTop = windowLayout.alwaysOnTop
-    }}
-    Shortcut { sequence: "Ctrl+Shift+B"; onActivated: backgroundController.cycleBackgroundSource() }
-
-    Connections {
-        target: timerController
-        function onPhaseChanged() {
-            backgroundController.phaseTint = timerController.phase
-        }
-    }
-
-    BackgroundView { anchors.fill: parent; z: 0 }
-
-    StackLayout {
+    ColumnLayout {
         anchors.fill: parent
-        z: 1
-        currentIndex: windowLayout.viewMode === "compact" ? 1
-                      : windowLayout.viewMode === "bar" ? 2 : 0
+        anchors.margins: Theme.xxl
+        spacing: Theme.xl
 
-        // Expanded
-        Item {
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 20
-                spacing: 14
+        WindowChrome {
+            Layout.fillWidth: true
+            onTasksClicked: root.toggleTasks()
+            onSettingsClicked: root.openSettings()
+        }
 
-                WindowChrome {
-                    Layout.fillWidth: true
-                    spotifyOpen: root.spotifyOpen
-                    onSpotifyToggled: root.spotifyOpen = !root.spotifyOpen
-                }
+        ActiveTasksBar {
+            Layout.fillWidth: true
+            visible: TaskController.activeCount > 0
+        }
 
-                ActiveTasksBar {
-                    Layout.fillWidth: true
-                    implicitHeight: 44
-                }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: Theme.xl
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 16
+            // Frosted timer panel
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                color: Qt.rgba(0.078, 0.086, 0.106, Theme.panelOpacity)
+                border.color: Theme.panelBorder
+                border.width: 1
+                radius: Theme.rPanel
 
-                    // Timer — centered in available space
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: Theme.xl + 2
 
-                        ColumnLayout {
-                            anchors.centerIn: parent
-                            spacing: 20
-
-                            RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 10
-
-                                ChromeButton {
-                                    text: timerController.mode === "pomodoro" ? "Pomodoro" : "Stopwatch"
-                                    checked: true
-                                    onClicked: timerController.setMode(
-                                        timerController.mode === "pomodoro" ? "stopwatch" : "pomodoro")
-                                }
-                            }
-
-                            TimerRing {
-                                Layout.alignment: Qt.AlignHCenter
-                                timeText: timerController.formattedTime
-                                running: timerController.isRunning
-                            }
-
-                            RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 8
-
-                                ChromeButton {
-                                    text: "Start"
-                                    accentColor: "#00d4aa"
-                                    onClicked: timerController.start()
-                                }
-                                ChromeButton {
-                                    text: "Pause"
-                                    onClicked: timerController.pause()
-                                }
-                                ChromeButton {
-                                    text: "Reset"
-                                    onClicked: timerController.reset()
-                                }
-                                ChromeButton {
-                                    text: "Skip"
-                                    onClicked: timerController.skipPhase()
-                                }
-                            }
-
-                            Label {
-                                Layout.alignment: Qt.AlignHCenter
-                                visible: !root.spotifyOpen
-                                text: "Press Music or Ctrl+M to open Spotify"
-                                color: "#666680"
-                                font.pixelSize: 11
-                            }
-                        }
+                    TimerDial {
+                        Layout.alignment: Qt.AlignHCenter
+                        diameter: Math.max(200, Math.min(280, root.height * 0.48))
                     }
 
-                    // Collapsible Spotify panel
-                    SpotifyDrawer {
-                        Layout.preferredWidth: root.spotifyOpen ? 340 : 0
-                        Layout.fillHeight: true
-                        Layout.maximumWidth: root.spotifyOpen ? 400 : 0
-                        opacity: root.spotifyOpen ? 1 : 0
-                        visible: width > 0 || root.spotifyOpen
+                    ModeSwitcher { Layout.alignment: Qt.AlignHCenter }
 
-                        Behavior on Layout.preferredWidth {
-                            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                        }
-                        Behavior on opacity {
-                            NumberAnimation { duration: 180 }
-                        }
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: TimerController.cycleLabel
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fNumeric
+                        color: Theme.textDim
                     }
                 }
             }
+
+            // Day column: fixed width, collapses behind a header toggle below
+            // 1040px rather than shrinking (labels collide at ~300px).
+            DayTimeline {
+                Layout.preferredWidth: 392
+                Layout.fillHeight: true
+                visible: SettingsController.showDayTimeline && Window.window.width >= 1040
+            }
+
+            SpotifyDrawer {
+                id: spotify
+            }
         }
-
-        CompactView { }
-
-        ProgressBarView { }
     }
 
-    TaskMenuDrawer {
-        z: 10
-        anchors.fill: parent
-        visible: taskController.menuOpen
-    }
 }

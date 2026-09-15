@@ -12,14 +12,18 @@
 #include <polomodoro/TimerEngine.h>
 #include <polomodoro/WindowLayoutManager.h>
 
+#include <QDir>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QDateTime>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QStandardPaths>
 #include <qqml.h>
 
 #include <polomodoro/TaskTreeModel.h>
+#include <QtWebEngineQuick/QQuickWebEngineProfile>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 int main(int argc, char *argv[])
@@ -31,6 +35,17 @@ int main(int argc, char *argv[])
     QtWebEngineQuick::initialize();
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
+
+    const int geistSansId = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Geist-Regular.ttf"));
+    const int geistMonoId = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/GeistMono-Regular.ttf"));
+    if (geistSansId >= 0) {
+        const QStringList families = QFontDatabase::applicationFontFamilies(geistSansId);
+        if (!families.isEmpty())
+            app.setFont(QFont(families.first()));
+    }
+    if (geistMonoId >= 0) {
+        Q_UNUSED(QFontDatabase::applicationFontFamilies(geistMonoId));
+    }
 
     polomodoro::DatabaseManager database;
     if (!database.open())
@@ -56,6 +71,27 @@ int main(int argc, char *argv[])
     polomodoro::ShutdownGuard shutdownGuard(database, taskTree);
     shutdownGuard.startHeartbeat(10000);
 
+    const QString spotifyData =
+        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
+        + QStringLiteral("/spotify-profile");
+    const QString spotifyCache =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        + QStringLiteral("/spotify-profile");
+    QDir().mkpath(spotifyData);
+    QDir().mkpath(spotifyCache);
+
+    QQuickWebEngineProfile spotifyProfile(QStringLiteral("polomodoro-spotify"));
+    spotifyProfile.setOffTheRecord(false);
+    spotifyProfile.setPersistentStoragePath(spotifyData);
+    spotifyProfile.setCachePath(spotifyCache);
+    spotifyProfile.setPersistentCookiesPolicy(QQuickWebEngineProfile::ForcePersistentCookies);
+    spotifyProfile.setHttpCacheType(QQuickWebEngineProfile::DiskHttpCache);
+    spotifyProfile.setPersistentPermissionsPolicy(
+        QQuickWebEngineProfile::PersistentPermissionsPolicy::StoreOnDisk);
+    spotifyProfile.setHttpUserAgent(
+        QStringLiteral("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+                       "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"));
+
     QObject::connect(&timerController, &polomodoro::TimerController::workSegmentCompleted, &app,
                      [&](qint64 durationMs) {
                          const QDateTime started = QDateTime::currentDateTimeUtc().addMSecs(-durationMs);
@@ -69,16 +105,25 @@ int main(int argc, char *argv[])
     });
 
     QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("timerController"), &timerController);
-    engine.rootContext()->setContextProperty(QStringLiteral("taskController"), &taskController);
-    engine.rootContext()->setContextProperty(QStringLiteral("settingsController"), &settingsController);
-    engine.rootContext()->setContextProperty(QStringLiteral("backgroundController"), &backgroundController);
-    engine.rootContext()->setContextProperty(QStringLiteral("spotifyController"), &spotifyController);
-    engine.rootContext()->setContextProperty(QStringLiteral("spotifyBridge"), &spotifyBridge);
-    engine.rootContext()->setContextProperty(QStringLiteral("windowLayout"), &windowLayout);
+    auto *ctx = engine.rootContext();
+    ctx->setContextProperty(QStringLiteral("TimerController"), &timerController);
+    ctx->setContextProperty(QStringLiteral("TaskController"), &taskController);
+    ctx->setContextProperty(QStringLiteral("SettingsController"), &settingsController);
+    ctx->setContextProperty(QStringLiteral("BackgroundController"), &backgroundController);
+    ctx->setContextProperty(QStringLiteral("SpotifyController"), &spotifyController);
+    ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
+    ctx->setContextProperty(QStringLiteral("timerController"), &timerController);
+    ctx->setContextProperty(QStringLiteral("taskController"), &taskController);
+    ctx->setContextProperty(QStringLiteral("settingsController"), &settingsController);
+    ctx->setContextProperty(QStringLiteral("backgroundController"), &backgroundController);
+    ctx->setContextProperty(QStringLiteral("spotifyController"), &spotifyController);
+    ctx->setContextProperty(QStringLiteral("spotifyBridge"), &spotifyBridge);
+    ctx->setContextProperty(QStringLiteral("windowLayout"), &windowLayout);
+    ctx->setContextProperty(QStringLiteral("SpotifyWebProfile"), &spotifyProfile);
 
+    qmlRegisterSingletonType(QUrl(QStringLiteral("qrc:/qml/Theme.qml")), "Polomodoro", 1, 0, "Theme");
     qmlRegisterUncreatableType<polomodoro::TaskTreeModel>(
-        "Polomodoro", 1, 0, "TaskTreeModel", QStringLiteral("Use taskController.model"));
+        "Polomodoro", 1, 0, "TaskTreeModel", QStringLiteral("Use TaskController.model"));
 
     const QUrl url(QStringLiteral("qrc:/qml/main.qml"));
     QObject::connect(

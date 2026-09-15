@@ -27,13 +27,23 @@ public:
         HasTargetRole,
         TargetReachedRole,
         ListBucketRole,
-        DepthRole
+        DepthRole,
+        ProgressLabelRole,
+        OverflowRatioRole,
+        OverTargetRole,
+        BadgeTextRole,
+        StartableRole,
+        OverdueRole,
+        StartsAtLabelRole,
+        HasChildrenRole,
+        HasPrevSiblingRole
     };
     Q_ENUM(Roles)
 
     explicit TaskTreeModel(TaskTree &tree, QObject *parent = nullptr);
 
     void setBucketFilter(const QString &bucket);
+    void setActiveSubtreeFilter(bool enabled);
     void setProgressBasis(const QString &basis);
     void refresh();
 
@@ -55,6 +65,7 @@ private:
     QVector<FlatRow> m_rows;
     TaskTree &m_tree;
     QString m_bucketFilter = QStringLiteral("all");
+    bool m_activeSubtree = false;
     QString m_progressBasis = QStringLiteral("active");
 
     void rebuild();

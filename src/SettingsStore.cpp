@@ -45,6 +45,8 @@ void SettingsStore::seedDefaults()
     ensure(QStringLiteral("notifyOnTargetReached"), QStringLiteral("true"));
     ensure(QStringLiteral("notifyOnTaskStart"), QStringLiteral("true"));
     ensure(QStringLiteral("notifyOnEndDateApproaching"), QStringLiteral("true"));
+    ensure(QStringLiteral("showDayTimeline"), QStringLiteral("true"));
+    ensure(QStringLiteral("accentMode"), QStringLiteral("auto"));
 }
 
 QString SettingsStore::getString(const QString &key, const QString &defaultValue) const

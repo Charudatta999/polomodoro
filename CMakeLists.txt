@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 option(POLOMODORO_STATIC_STDCXX "Statically link libgcc/libstdc++" OFF)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Qml Sql QuickControls2 WebEngineQuick)
+find_package(Qt6 REQUIRED COMPONENTS Quick Qml Sql QuickControls2 WebEngineQuick QuickEffects)
 
 qt_add_executable(polomodoro
     include/polomodoro/TaskTreeModel.h
@@ -46,6 +46,7 @@ target_link_libraries(polomodoro PRIVATE
     Qt6::Sql
     Qt6::QuickControls2
     Qt6::WebEngineQuick
+    Qt6::QuickEffects
 )
 
 if(POLOMODORO_STATIC_STDCXX)

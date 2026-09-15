@@ -1,65 +1,86 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Polomodoro
 
-Rectangle {
-    color: "#88000000"
+// Overlay, not push: the timer must not reflow mid-session.
+Drawer {
+    id: root
+    parent: Overlay.overlay
+    edge: Qt.LeftEdge
+    width: 400
+    y: 0
+    height: Overlay.overlay ? Overlay.overlay.height : 0
+    interactive: true
+    modal: true
+    dim: true
+    Overlay.modal: Rectangle { color: Qt.rgba(0.024, 0.027, 0.035, 0.55) }
 
-    MouseArea {
+    enter: Transition { NumberAnimation { property: "position"; to: 1; duration: Theme.dEnter; easing.type: Easing.OutQuint } }
+    exit:  Transition { NumberAnimation { property: "position"; to: 0; duration: Theme.dEnter; easing.type: Easing.OutQuint } }
+
+    background: Rectangle {
+        color: Qt.rgba(0.055, 0.059, 0.075, 0.96)
+        border.color: Theme.panelBorder
+        border.width: 1
+    }
+
+    function createTask(parentId) { editor.openFor(null, parentId || null) }
+
+    onOpenedChanged: TaskController.setMenuOpen(opened)
+
+    ColumnLayout {
         anchors.fill: parent
-        onClicked: taskController.setMenuOpen(false)
-    }
+        anchors.margins: Theme.xl
+        spacing: Theme.lg
 
-    Rectangle {
-        width: Math.min(420, parent.width * 0.9)
-        height: parent.height
-        color: "#f012121f"
-        border.color: "#33ffffff"
-        radius: 12
-
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {} // block click-through to backdrop
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: "Tasks"; font.family: Theme.fontFamily; font.pixelSize: 19; font.weight: Font.DemiBold; color: Theme.textPrimary }
+            Item { Layout.fillWidth: true }
+            IconButton { glyph: "close"; onClicked: root.close() }
         }
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 12
-            z: 1
-            spacing: 8
+        PoloTabBar {
+            id: tabs
+            Layout.fillWidth: true
+            model: [
+                { label: "Active",  count: TaskController.activeCount,  always: true },
+                { label: "Pending", count: TaskController.pendingCount, always: false },
+                { label: "Future",  count: TaskController.futureCount,  always: false },
+                { label: "All",     count: -1,                          always: false }
+            ]
+        }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Label { text: "Tasks"; font.pixelSize: 20; color: "white"; Layout.fillWidth: true }
-                ChromeButton { text: "Close"; onClicked: taskController.setMenuOpen(false) }
-            }
+        PillButton {
+            Layout.fillWidth: true
+            label: "+  New task"
+            primary: true
+            onClicked: root.createTask()
+        }
 
-            TabBar {
-                id: tabs
-                Layout.fillWidth: true
-                TabButton { text: "Active"; onClicked: taskController.setBucketFilter("active") }
-                TabButton { text: "Pending"; onClicked: taskController.setBucketFilter("pending") }
-                TabButton { text: "Future"; onClicked: taskController.setBucketFilter("future") }
-                TabButton { text: "All"; onClicked: taskController.setBucketFilter("all") }
-            }
+        // Four proxies over ONE TaskTreeModel — bucket is the filter role.
+        // A StackLayout keeps each tab's scroll position across a switch.
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: tabs.currentIndex
 
-            Button {
-                text: "+ New task"
-                Layout.fillWidth: true
-                onClicked: taskController.createTask("New task")
-            }
+            TaskTreeView { bucket: "active" }
+            TaskTreeView { bucket: "pending" }
+            TaskTreeView { bucket: "future" }
+            TaskTreeView { bucket: "all" }
+        }
 
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line }
 
-                ListView {
-                    model: taskController.model
-                    spacing: 4
-                    delegate: TaskRow { width: ListView.view.width }
-                }
-            }
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: "Show completed"; font.family: Theme.fontFamily; font.pixelSize: Theme.fNumeric; color: Theme.textDim }
+            Item { Layout.fillWidth: true }
+            PoloToggle { checked: TaskController.showCompleted; onToggled: TaskController.showCompleted = checked }
         }
     }
+
+    TaskEditor { id: editor }
 }

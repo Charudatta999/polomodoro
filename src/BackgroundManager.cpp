@@ -15,6 +15,7 @@ struct BackgroundManager::Impl {
     qint64 lastRotationMs = 0;
     QString spotifyArtUrl;
     QString currentUrl;
+    QString previousUrl;
 };
 
 BackgroundManager::BackgroundManager(SettingsStore &settings)
@@ -28,7 +29,7 @@ BackgroundManager::BackgroundManager(SettingsStore &settings)
             d->wallpaperPaths.push_back(dir.filePath(f));
     }
     if (d->wallpaperPaths.isEmpty())
-        d->currentUrl = QStringLiteral("gradient://default");
+        d->currentUrl = QStringLiteral("qrc:/wallpapers/default.png");
     else
         d->currentUrl = QUrl::fromLocalFile(d->wallpaperPaths.first()).toString();
 }
@@ -40,6 +41,11 @@ QString BackgroundManager::currentImageUrl() const
     if (backgroundSource() == QStringLiteral("spotify") && !d->spotifyArtUrl.isEmpty())
         return d->spotifyArtUrl;
     return d->currentUrl;
+}
+
+QString BackgroundManager::previousImageUrl() const
+{
+    return d->previousUrl;
 }
 
 QString BackgroundManager::backgroundSource() const
@@ -66,6 +72,7 @@ void BackgroundManager::tick()
     if (d->lastRotationMs < rotationSec * 1000LL)
         return;
     d->lastRotationMs = 0;
+    d->previousUrl = d->currentUrl;
     d->wallpaperIndex = (d->wallpaperIndex + 1) % d->wallpaperPaths.size();
     d->currentUrl = QUrl::fromLocalFile(d->wallpaperPaths.at(d->wallpaperIndex)).toString();
 }

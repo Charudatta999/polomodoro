@@ -14,6 +14,7 @@ public:
     ~BackgroundManager();
 
     QString currentImageUrl() const;
+    QString previousImageUrl() const;
     QString backgroundSource() const;
 
     void setBackgroundSource(const QString &source);

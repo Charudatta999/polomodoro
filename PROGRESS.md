@@ -24,10 +24,16 @@ Last updated: 2026-09-16 (session 1)
 - **Compiles**: yes (`./build/polomodoro`)
 - **Location**: `/home/taps/Projects/polomodoro`
 
+### Phase 1 integration (2026-09-16)
+- Ported deliverable QML shell: Theme, main.qml, StackLayoutLike, all three view modes
+- Components: TimerDial, ModeSwitcher, SpotifyDrawer (edge tab), WindowChrome, IconButton+SVG icons
+- Extended C++ API: TimerController, WindowLayoutManager (int viewMode), SpotifyController, TaskController, SettingsController, BackgroundController
+- Stubs: DayTimeline, simplified TaskEditor (title only)
+- **Visual polish batch:** drawer overlay, blurred wallpaper + phase tint, Geist fonts, frameless chrome, day timeline mock, bar/PiP theme tokens, larger timer dial, bundled default wallpaper, extra shortcuts
+
 ### Deliverable QML review (2026-09-16)
 - Reviewed 40 files in `Renders/Deliverable and surface prioritization/qml/`
 - Wrote integration plan: **[INTEGRATION-PRIORITIES.md](INTEGRATION-PRIORITIES.md)**
-- **Next:** Phase 1 — Theme, IconButton+SVG, SpotifyDrawer edge tab, MainWindow layout, TimerDial
 
 ### UI interim pass (2026-09-16)
 - Spotify **hidden by default** — click **Music** or `Ctrl+M` to slide panel open
