@@ -117,6 +117,56 @@ Rectangle {
             color: Theme.textDim
         }
 
+        // A task with no start time has nowhere to sit on a time axis, so it
+        // would otherwise just be missing here after you add it. Listing them
+        // makes them visible and one click drops them onto the day.
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Theme.xs
+            visible: DayTimelineModel.unscheduled.length > 0
+
+            Text {
+                text: "UNSCHEDULED · CLICK TO PLACE ON THIS DAY"
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.fEyebrow
+                color: Theme.textFaint
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                spacing: Theme.xs
+
+                Repeater {
+                    model: DayTimelineModel.unscheduled
+                    Rectangle {
+                        required property var modelData
+                        height: 24
+                        width: chipText.implicitWidth + Theme.md
+                        radius: Theme.rPill
+                        color: chipHover.hovered ? Theme.line : Theme.surfaceRaised
+                        border.width: 1
+                        border.color: Theme.line
+
+                        Text {
+                            id: chipText
+                            anchors.centerIn: parent
+                            text: modelData.title
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 11
+                            color: Theme.textDim
+                        }
+
+                        HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler {
+                            onTapped: DayTimelineModel.scheduleTaskAt(
+                                          modelData.taskId,
+                                          DayTimelineModel.suggestedStartMinutes())
+                        }
+                    }
+                }
+            }
+        }
+
         Flickable {
             id: flick
             Layout.fillWidth: true
@@ -218,7 +268,20 @@ Rectangle {
                             }
                         }
                         HoverHandler {
+                            id: blockHover
                             cursorShape: block.movable ? Qt.OpenHandCursor : Qt.ArrowCursor
+                        }
+
+                        // Placing a task on the day must be reversible.
+                        IconButton {
+                            visible: block.movable && blockHover.hovered
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 2
+                            glyph: "close"
+                            small: true
+                            tooltip: "Remove from this day"
+                            onClicked: DayTimelineModel.unscheduleTask(block.taskId)
                         }
                     }
                 }

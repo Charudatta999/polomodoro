@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Polomodoro
 
@@ -137,5 +138,36 @@ Rectangle {
         }
     }
 
-    TaskRowMenu { id: rowMenu; task: root.task }
+    TaskRowMenu {
+        id: rowMenu
+        task: root.task
+        onDeleteRequested: {
+            // Subtasks are removed by an ON DELETE CASCADE in the schema, so
+            // deleting a parent silently takes its whole subtree with it.
+            if (root.task.hasChildren)
+                confirmDelete.open()
+            else
+                TaskController.deleteTask(root.task.id)
+        }
+    }
+
+    Dialog {
+        id: confirmDelete
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Delete this task?"
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        onAccepted: TaskController.deleteTask(root.task.id)
+
+        Text {
+            width: 260
+            wrapMode: Text.WordWrap
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fBodyS
+            color: Theme.textPrimary
+            text: "\"" + root.task.title + "\" has subtasks. Deleting it will "
+                  + "also delete everything nested under it. This cannot be undone."
+        }
+    }
 }

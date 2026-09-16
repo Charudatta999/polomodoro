@@ -25,6 +25,7 @@ class DayTimelineModel : public QAbstractListModel {
     Q_PROPERTY(int nowMinutes READ nowMinutes NOTIFY nowChanged)
     // QAbstractListModel exposes no count to QML on its own.
     Q_PROPERTY(int count READ count NOTIFY contentChanged)
+    Q_PROPERTY(QVariantList unscheduled READ unscheduledTasks NOTIFY contentChanged)
 public:
     enum Roles {
         TaskIdRole = Qt::UserRole + 1,
@@ -61,6 +62,14 @@ public:
     // Drops a dragged block at a new start offset, snapped to `snapMinutes`.
     // Only "planned" rows move; returns false for logged history.
     Q_INVOKABLE bool moveBlock(int row, int newStartMinutes, int snapMinutes = 5);
+
+    // Tasks with no scheduled start have no time to render at, so they never
+    // appear as blocks. They are surfaced separately so a newly added task is
+    // visible here and can be dropped onto the day in one click.
+    Q_INVOKABLE QVariantList unscheduledTasks() const;
+    Q_INVOKABLE bool scheduleTaskAt(const QString &taskId, int startMinutes, int snapMinutes = 5);
+    Q_INVOKABLE int suggestedStartMinutes() const;
+    Q_INVOKABLE bool unscheduleTask(const QString &taskId);
 
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;

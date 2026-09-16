@@ -117,6 +117,71 @@ bool DayTimelineModel::moveBlock(int row, int newStartMinutes, int snapMinutes)
     return true;
 }
 
+QVariantList DayTimelineModel::unscheduledTasks() const
+{
+    QVariantList out;
+    for (const TaskNode *task : m_tree.allTasks()) {
+        if (!task || task->scheduledStartAt.isValid())
+            continue;
+        if (task->status == TaskStatus::Completed)
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("taskId")] = task->id;
+        m[QStringLiteral("title")] = task->title;
+        out.push_back(m);
+    }
+    return out;
+}
+
+int DayTimelineModel::suggestedStartMinutes() const
+{
+    // Next quarter hour when looking at today, otherwise the start of the
+    // working range so the block lands somewhere visible.
+    if (!showingToday())
+        return 9 * 60;
+    const int now = nowMinutes();
+    return std::min(((now / 15) + 1) * 15, 24 * 60 - 15);
+}
+
+bool DayTimelineModel::scheduleTaskAt(const QString &taskId, int startMinutes, int snapMinutes)
+{
+    if (snapMinutes < 1)
+        snapMinutes = 1;
+    int snapped = ((startMinutes + snapMinutes / 2) / snapMinutes) * snapMinutes;
+    snapped = std::clamp(snapped, 0, 24 * 60 - 1);
+
+    const QDateTime localStart(m_date, QTime(snapped / 60, snapped % 60));
+    const TaskNode *task = m_tree.findById(taskId);
+    if (!task)
+        return false;
+
+    // Give it a visible length: its target if it has one, else an hour.
+    const qint64 lengthMs = task->targetMs > 0 ? task->targetMs : 60LL * 60 * 1000;
+    if (!m_tree.rescheduleTask(taskId, localStart.toUTC()))
+        return false;
+    if (TaskNode *mutableTask = m_tree.findById(taskId)) {
+        if (!mutableTask->scheduledEndAt.isValid())
+            mutableTask->scheduledEndAt = localStart.toUTC().addMSecs(lengthMs);
+        m_tree.saveTask(taskId);
+    }
+
+    refresh();
+    return true;
+}
+
+bool DayTimelineModel::unscheduleTask(const QString &taskId)
+{
+    TaskNode *task = m_tree.findById(taskId);
+    if (!task)
+        return false;
+    task->scheduledStartAt = QDateTime();
+    task->scheduledEndAt = QDateTime();
+    if (!m_tree.saveTask(taskId))
+        return false;
+    refresh();
+    return true;
+}
+
 int DayTimelineModel::rowCount(const QModelIndex &parent) const
 {
     return parent.isValid() ? 0 : m_blocks.size();

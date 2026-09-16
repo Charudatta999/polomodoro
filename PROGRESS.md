@@ -223,6 +223,30 @@ looked like.
   are otherwise completely silent and cost real time this session. Prefer it
   over the `Qt.exit(code)` trick from session 4.
 
+### Session 6 (2026-09-16, delete cascade + unscheduled tasks)
+
+- **"Deleting one task deletes all" was ON DELETE CASCADE.** Verified the model
+  path is correct: with three root tasks, deleting one leaves the other two
+  (and a subtask) intact. The reported case was a parent with a subtask —
+  `parent_id ... ON DELETE CASCADE` in the schema plus `PRAGMA foreign_keys=ON`
+  means deleting the parent takes the subtree, which is intended but was
+  completely unannounced. `TaskRowMenu` even carried a comment saying to
+  confirm when children would cascade; no confirmation had ever been written.
+  Added one: `TaskRowMenu` now raises a `deleteRequested` signal and `TaskRow`
+  shows a modal confirm naming the task when `hasChildren`, deleting directly
+  otherwise.
+- **"Added tasks are not shown on the calendar" — they had no time.** Confirmed
+  by test that a task saved *with* a scheduled start appears immediately
+  ("11:00 planned · ..."), while one created without one does not, because
+  there is nothing to place on a time axis. Rather than fabricate a time,
+  unscheduled non-completed tasks are now listed as chips above the timeline
+  ("UNSCHEDULED · CLICK TO PLACE ON THIS DAY"); clicking one schedules it on
+  the selected day at `suggestedStartMinutes()` (next quarter hour today, else
+  09:00) with its target as the length, falling back to an hour. Blocks gained
+  a hover close button to send a task back to unscheduled, so placing one is
+  reversible. Round trip verified: 3 unscheduled/0 blocks → schedule → 2/1 →
+  unschedule → 3/0.
+
 ## Known gaps / next session
 
 1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves
