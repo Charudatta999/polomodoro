@@ -88,10 +88,31 @@ Rectangle {
             }
         }
 
+        // Without a Widevine CDM, Spotify refuses playback and blames the
+        // browser ("you block protected content"), which is misleading. Name
+        // the real cause instead.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 52
+            visible: WidevineCdmPath.length === 0
+            color: Theme.surfaceRaised
+            Text {
+                anchors.fill: parent
+                anchors.margins: Theme.sm
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                text: "No Widevine CDM found — Spotify will refuse playback.\nInstall it (AUR: widevine-cdm) — see README."
+                font.family: Theme.fontFamily
+                font.pixelSize: 11
+                color: Theme.textDim
+            }
+        }
+
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
-            visible: SpotifyController.premiumRequired
+            visible: SpotifyController.premiumRequired && WidevineCdmPath.length > 0
             color: Theme.surfaceRaised
             Text {
                 anchors.centerIn: parent

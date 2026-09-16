@@ -283,6 +283,28 @@ same document). It defines both surfaces I had been guessing at.
   because it fixes the real complaint that a task added without a time simply
   vanishes from this surface.
 
+### Session 8 (2026-09-16, Spotify DRM)
+
+- **"Spotify won't work if you block protected content" was a missing Widevine
+  CDM.** QtWebEngine only searches `~/.config/chromium/WidevineCdm` and
+  `~/.config/google-chrome/WidevineCdm`; this machine has neither browser, so
+  no CDM was found and every EME request was refused. Three perfectly good
+  copies of `libwidevinecdm.so` 4.10.3050.0 were already present (Brave,
+  Netflix, the Spotify cache). `findWidevineCdm()` in `main.cpp` now scans
+  those locations plus the Chrome/Chromium system paths, picks the highest
+  version, and appends `--widevine-path=` to `QTWEBENGINE_CHROMIUM_FLAGS`
+  **before** `QtWebEngineQuick::initialize()` — the flags are read when
+  Chromium starts, not when a view is created.
+- **Proven, not assumed.** A standalone QtWebEngine probe calling
+  `navigator.requestMediaKeySystemAccess('com.widevine.alpha', ...)` and
+  reporting through the exit code: without the flag the request is rejected
+  (the user's exact symptom), with it the page reports `WIDEVINE_OK`.
+  Harness kept at `scratchpad/eme/` for re-testing.
+- **DRM notice added**, per the spec's degraded states ("Inline notice naming
+  the Widevine package, with the README section linked"): `WidevineCdmPath` is
+  exposed as a context property and `SpotifyDrawer` shows a notice naming the
+  package when it is empty, rather than letting Spotify blame the browser.
+
 ## Known gaps / next session
 
 1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves

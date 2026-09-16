@@ -15,6 +15,8 @@
 #include <polomodoro/WindowLayoutManager.h>
 
 #include <QDir>
+#include <QFileInfo>
+#include <QVersionNumber>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -43,11 +45,70 @@ static void verboseMessageHandler(QtMsgType type, const QMessageLogContext &ctx,
             ctx.file ? ctx.file : "-", ctx.line);
 }
 
+// Spotify's web player is DRM-gated and refuses to play without a Widevine
+// CDM, reporting it as "you block protected content / incompatible browser".
+// QtWebEngine only looks in ~/.config/chromium and ~/.config/google-chrome,
+// which a machine with neither installed will not have — even though other
+// Chromium-based apps here have already downloaded a perfectly good CDM. Find
+// one and point QtWebEngine at it explicitly.
+static QString findWidevineCdm()
+{
+    const QString home = QDir::homePath();
+    const QStringList roots = {
+        home + QStringLiteral("/.config/chromium/WidevineCdm"),
+        home + QStringLiteral("/.config/google-chrome/WidevineCdm"),
+        home + QStringLiteral("/.config/BraveSoftware/Brave-Browser/WidevineCdm"),
+        home + QStringLiteral("/.config/Netflix/WidevineCdm"),
+        home + QStringLiteral("/.cache/spotify/WidevineCdm"),
+        QStringLiteral("/opt/google/chrome/WidevineCdm"),
+        QStringLiteral("/usr/lib/chromium/WidevineCdm"),
+    };
+
+    QString best;
+    QVersionNumber bestVersion;
+    for (const QString &root : roots) {
+        QDir dir(root);
+        if (!dir.exists())
+            continue;
+        const QStringList versions =
+            dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+        for (const QString &v : versions) {
+            const QString so = root + QLatin1Char('/') + v
+                + QStringLiteral("/_platform_specific/linux_x64/libwidevinecdm.so");
+            if (!QFileInfo::exists(so))
+                continue;
+            const QVersionNumber version = QVersionNumber::fromString(v);
+            if (best.isEmpty() || version > bestVersion) {
+                best = so;
+                bestVersion = version;
+            }
+        }
+    }
+    return best;
+}
+
+static QString g_widevineCdmPath;
+
 int main(int argc, char *argv[])
 {
     if (qEnvironmentVariableIsSet("POLOMODORO_VERBOSE")) {
         QLoggingCategory::setFilterRules(QStringLiteral("*=true"));
         qInstallMessageHandler(verboseMessageHandler);
+    }
+
+    // Must happen before QtWebEngineQuick::initialize(): the flags are read
+    // when Chromium starts up, not when a view is created.
+    g_widevineCdmPath = findWidevineCdm();
+    if (const QString cdm = g_widevineCdmPath; !cdm.isEmpty()) {
+        QString flags = qEnvironmentVariable("QTWEBENGINE_CHROMIUM_FLAGS");
+        if (!flags.contains(QStringLiteral("--widevine-path"))) {
+            if (!flags.isEmpty())
+                flags += QLatin1Char(' ');
+            flags += QStringLiteral("--widevine-path=") + cdm;
+            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags.toUtf8());
+        }
+    } else {
+        fprintf(stderr, "Widevine CDM not found — Spotify playback will be refused.\n");
     }
 
     QCoreApplication::setOrganizationName(QStringLiteral("Polomodoro"));
@@ -161,6 +222,8 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("SpotifyController"), &spotifyController);
     ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
     ctx->setContextProperty(QStringLiteral("DayTimelineModel"), &dayTimeline);
+    // Empty when no CDM was found; the Spotify drawer shows the DRM notice.
+    ctx->setContextProperty(QStringLiteral("WidevineCdmPath"), g_widevineCdmPath);
     ctx->setContextProperty(QStringLiteral("timerController"), &timerController);
     ctx->setContextProperty(QStringLiteral("taskController"), &taskController);
     ctx->setContextProperty(QStringLiteral("settingsController"), &settingsController);
