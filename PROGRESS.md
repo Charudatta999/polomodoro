@@ -305,33 +305,89 @@ same document). It defines both surfaces I had been guessing at.
   exposed as a context property and `SpotifyDrawer` shows a notice naming the
   package when it is empty, rather than letting Spotify blame the browser.
 
+### Session 9 (2026-09-17, bar/PiP frame, drag, and the expanded→bar width bug)
+
+User report: PiP/bar windows couldn't be moved freely, showed a GNOME-style
+titlebar on top of the app's own chrome, and the task drawer wasn't fully
+visible when opened from bar mode. The visual spec (session 7's read of
+`Polomodoro Visual Spec.dc.html`) turned out to name the exact fixes:
+
+- **Titlebar fixed by making `flags` mode-independent.** Previously only bar
+  and PiP got `Qt.FramelessWindowHint`; expanded did not, and the *change* in
+  `flags` on every mode switch is what the spec's own QML notes warn about —
+  "some Wayland compositors recreate the surface and drop the hint." Since
+  every mode already draws its own chrome (`WindowChrome` in expanded, the bar
+  and PiP backgrounds themselves), there is no reason to ever want a system
+  titlebar. `flags` is now `Qt.Window | Qt.FramelessWindowHint` unconditionally,
+  so a mode switch never touches it and the surface is never recreated on that
+  account. Confirmed with a `POLOMODORO_FRAME_TEST` probe (added to
+  `main.cpp`, kept as a permanent debug affordance since `grabWindow()`
+  screenshots cannot show decoration state) reading real `QWindow` flags and
+  frame margins: `frameless=1`, top margin `0`, `decorated=no` in all three
+  modes and across every transition.
+- **Dragging fixed by switching from `DragHandler` to a `MouseArea`,** per the
+  spec's own instruction ("Drag via `DragHandler` on the background only" is
+  what the mock used, but in practice `DragHandler.onActiveChanged` only fires
+  *after* the drag threshold, presenting `startSystemMove()` with an input
+  serial the compositor treats as stale and silently refuses). The background
+  `MouseArea` in `ProgressBarView.qml` and `CompactView.qml` now calls
+  `startSystemMove()` from `onPositionChanged` while pressed — on first motion,
+  not after a threshold — so the serial is still current. PiP's double-click
+  to expand was folded into the same `MouseArea` (`onDoubleClicked`) rather
+  than a second overlapping handler competing for the same events.
+- **Bar-mode task drawer fixed by redirecting to expanded**, not by trying to
+  fit a 400 px, full-window-height `Drawer` into a 48 px bar or 140 px PiP
+  window. `toggleTaskDrawer()` now switches to expanded first when called from
+  bar or PiP, waits out the geometry settle, and opens the drawer there —
+  which is also where the spec's own drawer mockups show it.
+- **The expanded→bar width bug from session 4 is fixed — root cause was a
+  second, uncoordinated writer of `Window.window.height`.**
+  `ProgressBarView.syncBarHeight()` ran on `onIsActiveChanged`, which fires
+  synchronously the instant `Window.window.viewMode` flips — before
+  `main.qml`'s own `Qt.callLater(_applyWindowGeometryNow)` has even run. That
+  fired an isolated height-only resize on the frameless Wayland surface,
+  immediately followed by `main.qml`'s width+height resize once the deferred
+  call executed. Two `xdg_toplevel` resize requests issued back to back within
+  the same handling of one mode change is not something to assume both land —
+  Wayland resizes are a request/ack cycle, not a fire-and-forget property
+  write — and the second one (carrying the width fix) reliably lost. Removed
+  `syncBarHeight()`'s hookup to `onIsActiveChanged`; it now only fires from
+  `onDropdownOpenChanged`, which happens well after a mode switch has settled.
+  Entering bar mode's initial height is `main.qml`'s job alone. Verified
+  against isolated per-transition fixtures (fresh profile, `viewMode` forced
+  to the *from* mode, corrupted geometry cleared, `POLOMODORO_VIEW_MODE` set
+  to the *to* mode) across all six transitions, twice each, zero QML warnings:
+  expanded→bar and compact→bar both now give `800x48` (previously
+  expanded→bar alone stuck at `1280x48`); →compact gives `300x140`; →expanded
+  gives `1280x800`.
+- **Caveat.** Everything above is verified through `QWindow` introspection
+  (`POLOMODORO_FRAME_TEST`) and scripted mode switches, not a real mouse
+  drag — this environment has no pointer injection. The `MouseArea` fix is
+  reasoned from the spec's own stated Wayland gotcha and from `flags` no
+  longer changing (which removes the surface-recreation hazard that would
+  invalidate *any* input serial, drag or otherwise), but an actual drag on the
+  real desktop is the one thing here that could still surprise.
+
 ## Known gaps / next session
 
-1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves
-   the width at the expanded width (e.g. 1280x48 instead of 800x48), and that
-   width is then persisted — it is a legal bar width so validation cannot reject
-   it. Not a timing issue: re-asserting the geometry repeatedly does not help.
-   Notably expanded→**compact** (1280→300) shrinks fine, compact→bar (300→800)
-   grows fine, and starting directly in bar mode gives a correct 800x48 — it is
-   specifically the expanded→bar shrink that sticks. Suspect a Wayland
-   size-constraint/window-recreation interaction. Repro:
-   `POLOMODORO_VIEW_MODE=1` from a profile whose stored `viewMode` is `expanded`.
-2. **The real profile still holds the old degraded geometry.** The ratchet is
-   fixed so it will not get worse, but `expandedGeometry` is stuck at its
-   legacy 640x420 (a legal size, so it is preserved rather than reset). To get
-   the intended defaults back:
+1. **The real profile may still hold old degraded geometry** from before the
+   session 4 ratchet fix. `expandedGeometry`/`barGeometry`/`compactGeometry`
+   are legal-but-stale sizes, so validation won't reset them on its own. To
+   force the shipped defaults back:
    ```bash
    sqlite3 ~/.config/polomodoro/polomodoro.db \
      "delete from settings where key like '%Geometry%';"
    ```
-3. Add logind D-Bus `PrepareForShutdown` flush (QtDBus already linked for
+2. Add logind D-Bus `PrepareForShutdown` flush (QtDBus already linked for
    notifications, so this is easier to add now)
-4. Bundled default wallpaper images in `resources/backgrounds/` (only one
+3. Bundled default wallpaper images in `resources/backgrounds/` (only one
    default wallpaper exists)
-5. `loggedWorkMs` progress basis UI in settings (basis is stored/read but no
+4. `loggedWorkMs` progress basis UI in settings (basis is stored/read but no
    settings toggle exposed yet)
-6. Test on Hyprland/Wayland with real Spotify login
-7. The `DateTimeField` SpinBoxes still render in light Fusion colors against the
+5. Test on real Hyprland/Wayland (and especially the new drag-to-move) with a
+   real pointer, and confirm Spotify login end to end — both untestable
+   headlessly on this machine.
+6. The `DateTimeField` SpinBoxes still render in light Fusion colors against the
    dark popup — cosmetic, unstyled.
 
 ## Resume instructions
@@ -342,5 +398,6 @@ cmake --build build
 ./build/polomodoro
 ```
 
-Continue from "Known gaps" above — start with re-testing PiP/bar mode and
-the calendar popup now that the task-list rendering bug is fixed.
+Continue from "Known gaps" above — start with a real-desktop pass on dragging
+bar/PiP by their background and confirming no titlebar reappears, since that
+is the one thing session 9 could not verify without pointer injection.

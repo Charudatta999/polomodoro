@@ -249,6 +249,34 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty())
         return 1;
 
+    // Debug affordance: grabWindow() (used by POLOMODORO_SCREENSHOT below)
+    // captures only the client-rendered surface, so it cannot show whether the
+    // compositor is drawing its own titlebar around it. This reports the real
+    // window flags and frame margins instead — a nonzero top margin or
+    // frame-vs-geometry mismatch means a system decoration is present despite
+    // Qt.FramelessWindowHint being set, e.g. because a Wayland compositor
+    // dropped the hint across a surface recreation.
+    if (qEnvironmentVariableIsSet("POLOMODORO_FRAME_TEST")) {
+        QTimer::singleShot(qEnvironmentVariableIntValue("POLOMODORO_FRAME_TEST"), &app, [&windowLayout, &engine]() {
+            auto *w = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+            if (!w) { QCoreApplication::exit(2); return; }
+            const QRect g = w->geometry();
+            const QRect fg = w->frameGeometry();
+            const QMargins m = w->frameMargins();
+            fprintf(stderr,
+                    "FRAME mode=%d frameless=%d geom=%dx%d min=%dx%d max=%dx%d "
+                    "margins(t%d) decorated=%s\n",
+                    windowLayout.viewMode(),
+                    (w->flags() & Qt::FramelessWindowHint) ? 1 : 0,
+                    g.width(), g.height(),
+                    w->minimumWidth(), w->minimumHeight(),
+                    w->maximumWidth(), w->maximumHeight(),
+                    m.top(),
+                    (m.top() > 0 || fg.height() > g.height()) ? "YES" : "no");
+            QCoreApplication::exit(0);
+        });
+    }
+
     // Debug affordance: this desktop denies both the GNOME Shell and the xdg
     // screenshot portals, so the only way to see what the app actually renders
     // is to have it grab itself. POLOMODORO_VIEW_MODE forces a view mode first

@@ -31,17 +31,25 @@ ApplicationWindow {
     minimumWidth: 640
     minimumHeight: 420
 
-    flags: (viewMode === 0 ? Qt.Window : Qt.Window | Qt.FramelessWindowHint)
+    // Every mode draws its own chrome (WindowChrome in expanded, the bar and
+    // PiP backgrounds themselves), so none of them wants a system titlebar.
+    // Because the hint is now identical across modes, switching modes no longer
+    // changes `flags` at all — which matters more than it looks: changing flags
+    // makes Wayland destroy and recreate the surface asynchronously, and that
+    // recreation was landing after the width/height assignments and throwing
+    // them away. That is what kept bar mode stuck at the expanded width.
+    flags: Qt.Window | Qt.FramelessWindowHint
            | (SettingsController.alwaysOnTop ? Qt.WindowStaysOnTopHint : 0)
 
-    // Deferred so that the flags binding above (which can force the platform
-    // window to be recreated) has settled before geometry is applied.
     function applyWindowGeometry() {
         Qt.callLater(_applyWindowGeometryNow)
     }
 
     function _applyWindowGeometryNow() {
         _applyingGeometry = true
+        // Minimum first: Qt clamps an incoming size against whatever floor is
+        // currently in force, so the outgoing mode's minimum has to be relaxed
+        // before the new size is written.
         var min = _minSizeForMode[WindowLayoutManager.viewMode] || _minSizeForMode[0]
         minimumWidth = min.w
         minimumHeight = min.h
@@ -52,16 +60,11 @@ ApplicationWindow {
         geometrySettleTimer.restart()
     }
 
+    // The compositor acks asynchronously, so re-assert once before reopening
+    // the persist guard and letting real user resizes through again.
     Timer {
         id: geometrySettleTimer
         interval: 250
-        // Two things happen asynchronously after the assignments above: the
-        // compositor acks the resize, and — when switching between expanded
-        // (titlebar) and bar/PiP (frameless) — the flags change makes Qt destroy
-        // and recreate the platform window, which can restore the pre-switch
-        // size. Re-assert the geometry once that has settled, and only then
-        // reopen the persist guard, so none of that churn is mistaken for a
-        // user resize.
         onTriggered: {
             app.x = WindowLayoutManager.x
             app.y = WindowLayoutManager.y
@@ -102,10 +105,27 @@ ApplicationWindow {
     SettingsView { id: settings }
 
     function toggleTaskDrawer() {
-        if (taskDrawer.opened)
+        if (taskDrawer.opened) {
             taskDrawer.close()
-        else
-            taskDrawer.open()
+            return
+        }
+        // The drawer is 400 px wide and as tall as the window. In bar mode the
+        // window is 48 px high and in PiP 140, so it would open as an unusable
+        // sliver — return to expanded, where it has room, and open it there.
+        if (WindowLayoutManager.viewMode !== 0) {
+            WindowLayoutManager.setMode(0)
+            openDrawerAfterModeChange.restart()
+            return
+        }
+        taskDrawer.open()
+    }
+
+    Timer {
+        id: openDrawerAfterModeChange
+        // Waits out the geometry settle so the drawer is sized against the
+        // expanded window rather than the one we just left.
+        interval: 300
+        onTriggered: taskDrawer.open()
     }
 
     Connections {
