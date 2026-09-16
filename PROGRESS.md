@@ -247,6 +247,42 @@ looked like.
   reversible. Round trip verified: 3 unscheduled/0 blocks → schedule → 2/1 →
   unschedule → 3/0.
 
+### Session 7 (2026-09-16, reconciled against the visual spec)
+
+Read the handoff spec (`claude-designfiles/.../Polomodoro Visual Spec.dc.html`;
+the shared claude.ai link is auth-walled and returns 403, the local copy is the
+same document). It defines both surfaces I had been guessing at.
+
+- **Reverted TaskRow to spec.** The spec is explicit that lifecycle buttons
+  "fade in from 0 → 1 (they are hidden at rest to keep the list quiet)" — the
+  hover-only behaviour reported as a bug in session 5 was deliberate. Restored
+  `opacity: 0` at rest and removed the ✓ and ⋯ buttons I had added, along with
+  their now-unused `check.svg` / `more.svg`. Complete and delete are
+  right-click only, as designed. The delete confirmation stays: the spec calls
+  for it explicitly ("Delete confirms only when children cascade").
+- **DayTimeline brought to spec.** Several things already matched by
+  coincidence (72 px/hour, Flickable over an Item, Repeaters, one absolute-y
+  helper, sessions by date range, overlap lanes, the 1 px accent now line).
+  Closed the rest:
+  - planned blocks are a **dashed** 1 px outline (`Shape` + `DashLine`), not solid;
+  - fixed **24 × 72** column that opens scrolled to the now line on today, else
+    an hour before the day's first block — replacing the dynamic hour window;
+  - **in-progress** blocks: hatched, open-ended (no bottom edge), grown from
+    `activeSince` and rebuilt on the shared 60 s tick;
+  - contiguous sessions of one task **under 2 min apart are merged**;
+  - lane split **capped at 3**, extras collapse to 4 px ticks fanned along the
+    right edge;
+  - min block height **18 px**, labels dropped below **34 px** with a tooltip;
+  - summary reads "N ACTIVE · …", not "N PLANNED".
+- **Lane assignment now uses the rendered extent, not the logical duration.**
+  With an 18 px floor a 3-minute session is painted ~15 minutes tall, so
+  assigning lanes by real duration left it underneath its neighbour and
+  unclickable — which is precisely what the spec's min-height rule exists to
+  prevent.
+- **The unscheduled-task tray is a deliberate addition, not in the spec.** Kept
+  because it fixes the real complaint that a task added without a time simply
+  vanishes from this surface.
+
 ## Known gaps / next session
 
 1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves

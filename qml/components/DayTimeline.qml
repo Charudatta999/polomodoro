@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 import Polomodoro
 
 // Real day timeline backed by DayTimelineModel. "planned" blocks come from a
@@ -14,15 +15,18 @@ Rectangle {
     radius: Theme.rPanel
     clip: true
 
+    // Fixed 72 px per hour over a full 24 h column, per spec: fit-to-height
+    // would compress a 12-minute session below its own label.
     readonly property int hourHeight: 72
     readonly property int gutter: 52
-    readonly property int firstMinute: DayTimelineModel.firstHour * 60
+    readonly property int minBlockHeight: 18
+    readonly property int labelMinHeight: 34
 
     function yForMinute(min) {
-        return (min - root.firstMinute) / 60 * root.hourHeight
+        return min / 60 * root.hourHeight
     }
     function minuteForY(y) {
-        return Math.round(y / root.hourHeight * 60) + root.firstMinute
+        return Math.round(y / root.hourHeight * 60)
     }
 
     ColumnLayout {
@@ -175,13 +179,28 @@ Rectangle {
             contentHeight: timeline.height
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+            // The column is a full 24 h, so where it opens is what matters:
+            // the now line on today, else an hour before the first block.
+            function scrollToModelPosition() {
+                var target = root.yForMinute(DayTimelineModel.scrollToMinutes)
+                             - height / 3
+                contentY = Math.max(0, Math.min(target, contentHeight - height))
+            }
+
+            Component.onCompleted: scrollToModelPosition()
+
+            Connections {
+                target: DayTimelineModel
+                function onSelectedDateChanged() { flick.scrollToModelPosition() }
+            }
+
             Item {
                 id: timeline
                 width: flick.width
-                height: DayTimelineModel.hourCount * root.hourHeight
+                height: 24 * root.hourHeight
 
                 Repeater {
-                    model: DayTimelineModel.hourCount
+                    model: 24
                     Rectangle {
                         required property int index
                         x: 0
@@ -192,7 +211,7 @@ Rectangle {
                         Text {
                             x: 0
                             y: -10
-                            text: String(DayTimelineModel.firstHour + index).padStart(2, "0") + ":00"
+                            text: String(index).padStart(2, "0") + ":00"
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.fEyebrow
                             color: Theme.textFaint
@@ -216,24 +235,87 @@ Rectangle {
                         required property bool movable
                         required property int lane
                         required property int laneCount
+                        required property bool collapsed
 
                         readonly property bool planned: kind === "planned"
+                        readonly property bool running: kind === "running"
                         // Overlapping blocks share the width as columns.
                         readonly property real laneWidth:
                             (timeline.width - root.gutter - 8) / Math.max(1, laneCount)
+                        readonly property color fillColor:
+                            overTarget ? Theme.overflow
+                                       : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.85)
 
-                        x: root.gutter + lane * laneWidth
+                        // Past the 3-lane cap a block becomes a 4 px tick
+                        // rather than squeezing every column into illegibility.
+                        // Ticks fan out along the right edge so they stay
+                        // individually visible and hoverable.
+                        x: collapsed
+                           ? timeline.width - 6 - (lane - laneCount) * 6
+                           : root.gutter + Math.min(lane, laneCount - 1) * laneWidth
                         y: root.yForMinute(startMinutes)
-                        width: laneWidth - (laneCount > 1 ? 4 : 0)
-                        height: Math.max(22, durationMinutes / 60 * root.hourHeight)
+                        width: collapsed ? 4 : laneWidth - (laneCount > 1 ? 4 : 0)
+                        height: Math.max(root.minBlockHeight,
+                                         durationMinutes / 60 * root.hourHeight)
                         radius: Theme.rTrough
 
-                        color: planned ? "transparent"
-                             : overTarget ? Theme.overflow
-                             : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.85)
-                        border.color: planned ? Theme.textDim : "transparent"
-                        border.width: planned ? 1 : 0
+                        // Planned is a hollow dashed outline (drawn below);
+                        // running is hatched; only logged gets a solid fill.
+                        color: (planned || running) ? "transparent" : fillColor
                         opacity: drag.active ? 0.75 : 1
+
+                        // Dashed 1 px outline for a planned block — nothing has
+                        // happened yet, so it must not read as solid time.
+                        Shape {
+                            anchors.fill: parent
+                            visible: block.planned
+                            antialiasing: true
+                            ShapePath {
+                                strokeColor: Theme.textDim
+                                strokeWidth: 1
+                                strokeStyle: ShapePath.DashLine
+                                dashPattern: [4, 3]
+                                fillColor: "transparent"
+                                startX: 0.5; startY: 0.5
+                                PathLine { x: block.width - 0.5; y: 0.5 }
+                                PathLine { x: block.width - 0.5; y: block.height - 0.5 }
+                                PathLine { x: 0.5; y: block.height - 0.5 }
+                                PathLine { x: 0.5; y: 0.5 }
+                            }
+                        }
+
+                        // Hatched, open-ended: an in-progress segment has no
+                        // bottom edge because it has no end yet.
+                        Canvas {
+                            id: hatch
+                            anchors.fill: parent
+                            visible: block.running
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                ctx.strokeStyle = block.fillColor
+                                ctx.lineWidth = 1
+                                ctx.globalAlpha = 0.85
+                                for (var i = -height; i < width; i += 7) {
+                                    ctx.beginPath()
+                                    ctx.moveTo(i, height)
+                                    ctx.lineTo(i + height, 0)
+                                    ctx.stroke()
+                                }
+                                ctx.globalAlpha = 1
+                                ctx.beginPath()
+                                ctx.moveTo(0.5, height)
+                                ctx.lineTo(0.5, 0.5)
+                                ctx.lineTo(width - 0.5, 0.5)
+                                ctx.lineTo(width - 0.5, height)
+                                ctx.stroke()
+                            }
+                            Connections {
+                                target: block
+                                function onHeightChanged() { hatch.requestPaint() }
+                                function onWidthChanged() { hatch.requestPaint() }
+                            }
+                        }
 
                         Text {
                             anchors.left: parent.left
@@ -241,12 +323,21 @@ Rectangle {
                             anchors.margins: Theme.sm
                             anchors.right: parent.right
                             elide: Text.ElideRight
+                            // Dropped on short blocks; the tooltip carries the
+                            // title and duration instead.
+                            visible: !block.collapsed
+                                     && block.height >= root.labelMinHeight
                             text: block.label
                             font.family: Theme.fontFamily
                             font.pixelSize: 11
-                            color: block.planned ? Theme.textDim
+                            color: (block.planned || block.running) ? Theme.textDim
                                  : block.overTarget ? Theme.bgBase : Theme.onAccent
                         }
+
+                        ToolTip.visible: blockHover.hovered
+                                         && (block.collapsed
+                                             || block.height < root.labelMinHeight)
+                        ToolTip.text: block.label
 
                         // Vertical drag reschedules. Logged history is not
                         // movable, so the handler is simply disabled there.

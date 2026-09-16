@@ -20,8 +20,9 @@ class DayTimelineModel : public QAbstractListModel {
     Q_PROPERTY(QString summaryLabel READ summaryLabel NOTIFY contentChanged)
     Q_PROPERTY(QVariantList weekDays READ weekDays NOTIFY selectedDateChanged)
     Q_PROPERTY(bool showingToday READ showingToday NOTIFY selectedDateChanged)
-    Q_PROPERTY(int firstHour READ firstHour NOTIFY contentChanged)
-    Q_PROPERTY(int hourCount READ hourCount NOTIFY contentChanged)
+    // Per spec the timeline is a fixed 24 * 72 px column, not fit-to-height, so
+    // there is no dynamic hour window — only where to scroll on open.
+    Q_PROPERTY(int scrollToMinutes READ scrollToMinutes NOTIFY contentChanged)
     Q_PROPERTY(int nowMinutes READ nowMinutes NOTIFY nowChanged)
     // QAbstractListModel exposes no count to QML on its own.
     Q_PROPERTY(int count READ count NOTIFY contentChanged)
@@ -30,14 +31,15 @@ public:
     enum Roles {
         TaskIdRole = Qt::UserRole + 1,
         TitleRole,
-        KindRole,            // "planned" | "logged"
+        KindRole,            // "planned" | "logged" | "running"
         StartMinutesRole,    // minutes from local midnight
         DurationMinutesRole,
         LabelRole,
         OverTargetRole,
         MovableRole,
         LaneRole,        // column index among blocks that overlap in time
-        LaneCountRole    // how many columns that overlap group needs
+        LaneCountRole,   // how many columns that overlap group needs
+        CollapsedRole    // past the 3-lane cap: render as a 4 px tick
     };
     Q_ENUM(Roles)
 
@@ -49,8 +51,7 @@ public:
     QString summaryLabel() const;
     QVariantList weekDays() const;
     bool showingToday() const;
-    int firstHour() const;
-    int hourCount() const;
+    int scrollToMinutes() const;
     int nowMinutes() const;
     int count() const;
 
@@ -96,6 +97,7 @@ private:
         bool movable = false;
         int lane = 0;
         int laneCount = 1;
+        bool collapsed = false;
     };
 
     void assignLanes();
@@ -103,8 +105,8 @@ private:
     TaskTree &m_tree;
     QDate m_date = QDate::currentDate();
     QVector<Block> m_blocks;
-    int m_firstHour = 9;
-    int m_hourCount = 6;
+    int m_scrollToMinutes = 0;
+    int m_activeCount = 0;
     qint64 m_loggedMsForDay = 0;
 
     void rebuild();

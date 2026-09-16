@@ -91,12 +91,11 @@ Rectangle {
             }
         }
 
-        // Dimmed at rest rather than hidden. Fully hiding these meant a row
-        // showed no controls at all until hovered, and complete/delete were
-        // reachable only through a right-click menu with nothing to hint at it.
+        // Hidden at rest, per spec: "lifecycle buttons fade in from 0 → 1
+        // (they are hidden at rest to keep the list quiet)".
         RowLayout {
             spacing: Theme.sm - 2
-            opacity: hover.hovered || root.task.status === "active" ? 1 : 0.55
+            opacity: hover.hovered || root.task.status === "active" ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: Theme.dStandard } }
 
             IconButton {
@@ -122,18 +121,6 @@ Rectangle {
                 glyph: "stop"
                 tooltip: "Stop"
                 onClicked: TaskController.stopTask(root.task.id)
-            }
-            IconButton {
-                visible: root.task.status !== "completed"
-                glyph: "check"
-                tooltip: "Mark complete"
-                onClicked: TaskController.completeTask(root.task.id)
-            }
-            // Same menu as right-click, but discoverable.
-            IconButton {
-                glyph: "more"
-                tooltip: "More actions"
-                onClicked: rowMenu.popup()
             }
         }
     }

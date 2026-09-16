@@ -94,10 +94,10 @@ int main(int argc, char *argv[])
     // Any task mutation can add, move or remove a block on the timeline.
     QObject::connect(&taskController, &polomodoro::TaskController::tasksChanged, &dayTimeline,
                      &polomodoro::DayTimelineModel::refresh);
-    // Drives the NOW marker; the block list itself only changes on mutation.
+    // Per spec the now line and the in-progress block share one 60 s timer.
     QTimer nowTicker;
     QObject::connect(&nowTicker, &QTimer::timeout, &dayTimeline, &polomodoro::DayTimelineModel::tick);
-    nowTicker.start(30000);
+    nowTicker.start(60000);
 
     polomodoro::ShutdownGuard shutdownGuard(database, taskTree);
     shutdownGuard.startHeartbeat(10000);

@@ -48,14 +48,9 @@ QString DayTimelineModel::dayLabel() const
 
 QString DayTimelineModel::summaryLabel() const
 {
-    int active = 0;
-    for (const Block &b : m_blocks) {
-        if (b.kind == QLatin1String("planned"))
-            ++active;
-    }
-    return QStringLiteral("%1 PLANNED · %2 LOGGED")
-        .arg(active)
-        .arg(m_loggedMsForDay > 0 ? durationLabel(m_loggedMsForDay) : QStringLiteral("0M"))
+    return QStringLiteral("%1 ACTIVE · %2 LOGGED")
+        .arg(m_activeCount)
+        .arg(m_loggedMsForDay > 0 ? durationLabel(m_loggedMsForDay) : QStringLiteral("0m"))
         .toUpper();
 }
 
@@ -79,8 +74,7 @@ QVariantList DayTimelineModel::weekDays() const
 }
 
 bool DayTimelineModel::showingToday() const { return m_date == QDate::currentDate(); }
-int DayTimelineModel::firstHour() const { return m_firstHour; }
-int DayTimelineModel::hourCount() const { return m_hourCount; }
+int DayTimelineModel::scrollToMinutes() const { return m_scrollToMinutes; }
 
 int DayTimelineModel::count() const { return m_blocks.size(); }
 
@@ -203,6 +197,7 @@ QVariant DayTimelineModel::data(const QModelIndex &index, int role) const
     case MovableRole: return b.movable;
     case LaneRole: return b.lane;
     case LaneCountRole: return b.laneCount;
+    case CollapsedRole: return b.collapsed;
     case Qt::DisplayRole: return b.label;
     default: return {};
     }
@@ -221,6 +216,7 @@ QHash<int, QByteArray> DayTimelineModel::roleNames() const
         {MovableRole, "movable"},
         {LaneRole, "lane"},
         {LaneCountRole, "laneCount"},
+        {CollapsedRole, "collapsed"},
     };
 }
 
@@ -234,6 +230,17 @@ void DayTimelineModel::refresh()
 
 void DayTimelineModel::tick()
 {
+    // A running block grows with the clock, so it needs a rebuild, not just a
+    // repositioned marker. Spec has both share one 60 s timer.
+    bool hasRunning = false;
+    for (const Block &b : m_blocks) {
+        if (b.kind == QLatin1String("running")) {
+            hasRunning = true;
+            break;
+        }
+    }
+    if (hasRunning)
+        refresh();
     emit nowChanged();
 }
 
@@ -246,8 +253,19 @@ void DayTimelineModel::assignLanes()
     int groupEnd = -1;       // latest end time seen in the current cluster
     QVector<int> laneEnds;   // end time per lane within the cluster
 
+    // Spec caps the split at 3 lanes; anything beyond collapses to a tick
+    // rather than shrinking every column into illegibility.
+    static constexpr int kMaxLanes = 3;
+    // A block is never drawn shorter than 18 px, which at 72 px/hour is 15
+    // minutes. Lanes must be assigned against that rendered extent, or a
+    // 3-minute session ends up painted under its neighbour and unclickable.
+    static constexpr int kMinRenderedMinutes = 15;
+    auto renderedEnd = [](const Block &b) {
+        return b.startMinutes + std::max(b.durationMinutes, kMinRenderedMinutes);
+    };
+
     auto closeGroup = [&](int endIndex) {
-        const int lanes = std::max(1, static_cast<int>(laneEnds.size()));
+        const int lanes = std::clamp(static_cast<int>(laneEnds.size()), 1, kMaxLanes);
         for (int i = groupStart; i < endIndex; ++i)
             m_blocks[i].laneCount = lanes;
         laneEnds.clear();
@@ -255,7 +273,7 @@ void DayTimelineModel::assignLanes()
 
     for (int i = 0; i < m_blocks.size(); ++i) {
         Block &b = m_blocks[i];
-        const int end = b.startMinutes + b.durationMinutes;
+        const int end = renderedEnd(b);
 
         // A block starting at or after every end so far begins a fresh cluster.
         if (groupEnd >= 0 && b.startMinutes >= groupEnd) {
@@ -277,7 +295,10 @@ void DayTimelineModel::assignLanes()
         } else {
             laneEnds[lane] = end;
         }
+        // Keep the true lane index even past the cap: the view uses it to fan
+        // the collapsed ticks out instead of piling them on the last column.
         b.lane = lane;
+        b.collapsed = lane >= kMaxLanes;
         groupEnd = groupEnd < 0 ? end : std::max(groupEnd, end);
     }
     closeGroup(static_cast<int>(m_blocks.size()));
@@ -321,24 +342,76 @@ void DayTimelineModel::rebuild()
         m_blocks.push_back(b);
     }
 
-    // Logged blocks: real sessions recorded on this local day.
+    // Logged blocks: real sessions recorded on this local day. Sessions of the
+    // same task less than 2 minutes apart are merged, so a pomodoro cycle reads
+    // as one bar rather than a stack of near-touching slivers.
+    struct Merged {
+        QString taskId;
+        QDateTime startLocal;
+        qint64 durationMs = 0;
+    };
+    QVector<Merged> merged;
     for (const SessionRecord &s : m_tree.sessionsBetween(dayStartLocal.toUTC(), dayEndLocal.toUTC())) {
-        const TaskNode *task = m_tree.findById(s.taskId);
-        const QString title = task ? task->title : QStringLiteral("(deleted task)");
         const QDateTime startLocal = s.startedAt.toLocalTime();
+        bool joined = false;
+        for (Merged &m : merged) {
+            if (m.taskId != s.taskId)
+                continue;
+            const QDateTime mEnd = m.startLocal.addMSecs(m.durationMs);
+            const qint64 gapMs = mEnd.msecsTo(startLocal);
+            if (gapMs >= 0 && gapMs < 2 * 60 * 1000) {
+                m.durationMs = m.startLocal.msecsTo(startLocal) + s.durationMs;
+                joined = true;
+                break;
+            }
+        }
+        if (!joined)
+            merged.push_back({s.taskId, startLocal, s.durationMs});
+        m_loggedMsForDay += s.durationMs;
+    }
+
+    for (const Merged &m : merged) {
+        const TaskNode *task = m_tree.findById(m.taskId);
+        const QString title = task ? task->title : QStringLiteral("(deleted task)");
 
         Block b;
-        b.taskId = s.taskId;
+        b.taskId = m.taskId;
         b.title = title;
         b.kind = QStringLiteral("logged");
-        b.startMinutes = minutesFromMidnight(startLocal);
-        b.durationMinutes = std::max(static_cast<int>(s.durationMs / 60000), 10);
-        b.label = QStringLiteral("%1 · %2").arg(title, durationLabel(s.durationMs));
+        b.startMinutes = minutesFromMidnight(m.startLocal);
+        b.durationMinutes = static_cast<int>(m.durationMs / 60000);
+        b.label = QStringLiteral("%1 · %2").arg(title, durationLabel(m.durationMs));
         b.overTarget = task && task->targetMs > 0
                        && m_tree.progressMs(*task, QStringLiteral("logged")) > task->targetMs;
         b.movable = false;
         m_blocks.push_back(b);
-        m_loggedMsForDay += s.durationMs;
+    }
+
+    // In-progress blocks: an active task's current segment, open-ended and
+    // growing with the clock. Only meaningful on the day it started.
+    m_activeCount = 0;
+    for (const TaskNode *task : m_tree.allTasks()) {
+        if (!task || task->status != TaskStatus::Active)
+            continue;
+        ++m_activeCount;
+        if (!task->activeSince.isValid())
+            continue;
+        const QDateTime startLocal = task->activeSince.toLocalTime();
+        if (startLocal.date() != m_date)
+            continue;
+
+        const qint64 runningMs = startLocal.msecsTo(QDateTime::currentDateTime());
+        Block b;
+        b.taskId = task->id;
+        b.title = task->title;
+        b.kind = QStringLiteral("running");
+        b.startMinutes = minutesFromMidnight(startLocal);
+        b.durationMinutes = static_cast<int>(std::max<qint64>(runningMs, 0) / 60000);
+        b.label = QStringLiteral("%1 · %2").arg(task->title, durationLabel(std::max<qint64>(runningMs, 0)));
+        b.overTarget = task->targetMs > 0
+                       && m_tree.progressMs(*task, QStringLiteral("active")) > task->targetMs;
+        b.movable = false;
+        m_blocks.push_back(b);
     }
 
     std::sort(m_blocks.begin(), m_blocks.end(), [](const Block &a, const Block &b) {
@@ -347,32 +420,16 @@ void DayTimelineModel::rebuild()
 
     assignLanes();
 
-    // Fit the visible hour range to the day's content. 09:00-15:00 is only a
-    // fallback for an empty day, never a floor: treating it as a floor pinned
-    // the view to 09:00 and pushed an evening's blocks below the fold.
-    int earliest = -1;
-    int latest = -1;
-    for (const Block &b : m_blocks) {
-        const int end = b.startMinutes + b.durationMinutes;
-        earliest = earliest < 0 ? b.startMinutes : std::min(earliest, b.startMinutes);
-        latest = latest < 0 ? end : std::max(latest, end);
-    }
+    // The column is a fixed 24 h, so the only decision is where it opens:
+    // the now line on today, otherwise an hour before the day's first block.
     if (showingToday()) {
-        const int now = nowMinutes();
-        earliest = earliest < 0 ? now : std::min(earliest, now);
-        latest = latest < 0 ? now + 60 : std::max(latest, now + 30);
+        m_scrollToMinutes = nowMinutes();
+    } else {
+        int earliest = -1;
+        for (const Block &b : m_blocks)
+            earliest = earliest < 0 ? b.startMinutes : std::min(earliest, b.startMinutes);
+        m_scrollToMinutes = earliest < 0 ? 9 * 60 : std::max(0, earliest - 60);
     }
-    if (earliest < 0) {
-        earliest = 9 * 60;
-        latest = 15 * 60;
-    }
-
-    earliest = std::max(0, earliest - 30);
-    latest = std::min(24 * 60, latest + 30);
-
-    m_firstHour = std::clamp(earliest / 60, 0, 23);
-    const int lastHour = std::clamp((latest + 59) / 60, m_firstHour + 1, 24);
-    m_hourCount = std::clamp(lastHour - m_firstHour, 4, 24 - m_firstHour);
 }
 
 } // namespace polomodoro
