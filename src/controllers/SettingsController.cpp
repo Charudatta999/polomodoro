@@ -120,6 +120,29 @@ int SettingsController::pomodoroWorkMs() const { return d->store.getInt(QStringL
 int SettingsController::pomodoroShortBreakMs() const { return d->store.getInt(QStringLiteral("pomodoroShortBreakMs"), 300000); }
 int SettingsController::pomodoroLongBreakMs() const { return d->store.getInt(QStringLiteral("pomodoroLongBreakMs"), 900000); }
 
+bool SettingsController::nowPlayingStripVisible() const { return d->store.getBool(QStringLiteral("nowPlayingStripVisible"), true); }
+int SettingsController::libraryOverlayWidth() const { return d->store.getInt(QStringLiteral("libraryOverlayWidth"), 520); }
+QString SettingsController::spotifyClientId() const { return d->store.getString(QStringLiteral("spotifyClientId")); }
+QString SettingsController::spotifyDeviceName() const { return d->store.getString(QStringLiteral("spotifyDeviceName")); }
+
+void SettingsController::setNowPlayingStripVisible(bool value)
+{
+    d->store.setBool(QStringLiteral("nowPlayingStripVisible"), value);
+    emit settingsChanged();
+}
+
+void SettingsController::setSpotifyClientId(const QString &value)
+{
+    d->store.setString(QStringLiteral("spotifyClientId"), value.trimmed());
+    emit settingsChanged();
+}
+
+void SettingsController::setSpotifyDeviceName(const QString &value)
+{
+    d->store.setString(QStringLiteral("spotifyDeviceName"), value.trimmed());
+    emit settingsChanged();
+}
+
 void SettingsController::exportCsv()
 {
     // Phase 4: export sessions to ~/Documents

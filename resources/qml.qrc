@@ -21,6 +21,7 @@
         <file alias="settings.svg">icons/settings.svg</file>
         <file alias="reset.svg">icons/reset.svg</file>
         <file alias="tasks.svg">icons/tasks.svg</file>
+        <file alias="device.svg">icons/device.svg</file>
     </qresource>
     <qresource prefix="/qml">
         <file alias="main.qml">../qml/main.qml</file>
@@ -42,8 +43,9 @@
         <file alias="components/TaskEditor.qml">../qml/components/TaskEditor.qml</file>
         <file alias="components/BackgroundView.qml">../qml/components/BackgroundView.qml</file>
         <file alias="components/BackgroundSourceToggle.qml">../qml/components/BackgroundSourceToggle.qml</file>
-        <file alias="components/SpotifyDrawer.qml">../qml/components/SpotifyDrawer.qml</file>
-        <file alias="components/SpotifyMediaControls.qml">../qml/components/SpotifyMediaControls.qml</file>
+        <file alias="components/NowPlayingStrip.qml">../qml/components/NowPlayingStrip.qml</file>
+        <file alias="components/LibraryOverlay.qml">../qml/components/LibraryOverlay.qml</file>
+        <file alias="components/DevicePopover.qml">../qml/components/DevicePopover.qml</file>
         <file alias="components/OverallProgressBar.qml">../qml/components/OverallProgressBar.qml</file>
         <file alias="components/SubtaskProgressDropdown.qml">../qml/components/SubtaskProgressDropdown.qml</file>
         <file alias="components/WindowChrome.qml">../qml/components/WindowChrome.qml</file>

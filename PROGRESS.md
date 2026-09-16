@@ -368,6 +368,84 @@ visible when opened from bar mode. The visual spec (session 7's read of
   invalidate *any* input serial, drag or otherwise), but an actual drag on the
   real desktop is the one thing here that could still surprise.
 
+### Session 10 (2026-09-17, Spotify architecture pivot: WebEngine → MPRIS + Web API)
+
+User shared updated design docs (`claude-designfiles/updated-docs/.../{PROMPT,RULEBOOK,DECISIONS}.md`
+and a refreshed reference `qml/`). `DECISIONS.md` audits a "build 1" against
+seven defects; confirmed most were already fixed in this repo by earlier
+sessions (day-timeline anchoring — session 7; drawer overlay/scrim; ring
+render; background image; frost; chrome pill sizing) — the audit predates
+those commits. The one substantive, unaddressed item was **R7: remove Qt
+WebEngine entirely.**
+
+- **Removed**: `qt6-webengine` dependency, `SpotifyController`,
+  `SpotifyArtBridge`, `SpotifyDrawer.qml`, `SpotifyMediaControls.qml`, the
+  Widevine CDM discovery from session 8 (moot — nothing left that needs it).
+- **Added**: `MprisController` (PIMPL over `QDBusInterface`/`QDBusConnectionInterface`,
+  watches `serviceOwnerChanged` for players appearing/vanishing rather than
+  polling, polls only `Position` at 1s while playing since MPRIS has no
+  continuous-progress signal); `SpotifyWebApi` (PIMPL over
+  `QNetworkAccessManager`, full OAuth PKCE — code verifier/challenge, a
+  loopback `QTcpServer` catching the redirect, token exchange/refresh,
+  devices/playlists/search/play/transferTo against the Web API).
+- **New QML** (copied from the reference bundle, both bugs below fixed in the
+  copies, not in the reference): `NowPlayingStrip.qml` (64px persistent
+  bottom bar — the only always-visible playback surface, so per its own spec
+  comment it controls, not just reports), `LibraryOverlay.qml` (520px
+  right-edge `Drawer`, mirrors the task drawer, sharp square art since the
+  app background is already that same image blurred), `DevicePopover.qml`.
+- **Reference bundle bugs found and fixed, not carried forward**:
+  `DevicePopover.qml`/`LibraryOverlay.qml` had five `font.pixelSize` values
+  as fractional literals (`12.5`, `9.5`, `13.5`×3) — `pixelSize` is `int`-typed
+  and this Qt build's QML engine rejects a fractional *literal* at that type
+  (confirmed via `QML WARNING: ... Invalid property assignment: int expected`,
+  which cascaded to `Type ... unavailable` up the whole `MainWindow` chain).
+  Same bug class as session 2's `TaskEditor.qml` incident. Also: the
+  reference bundle's own `ProgressBarView.qml` (bar mode) still referenced
+  the deleted `SpotifyMediaControls` — the R1 pivot hadn't been fully
+  propagated there. Replaced with compact MPRIS transport buttons matching
+  `NowPlayingStrip`'s set, per rulebook §7 ("if a spec page is wrong, stop
+  and say so… do not silently implement something else").
+- **Secrets discipline**: the refresh token never goes in the settings table.
+  `qtkeychain-qt6` isn't installed on this machine, so `CMakeLists.txt`
+  treats it as optional (`find_package(Qt6Keychain QUIET)`, gated behind
+  `POLOMODORO_HAVE_KEYCHAIN`) — without it, `SpotifyWebApi` keeps the token
+  in memory for the session only and says so, rather than writing it
+  somewhere insecure as a fallback.
+- **New settings**: `spotifyClientId` (public PKCE client id — none invented,
+  Settings → Music prompts for one), `spotifyRedirectPort` (default 8888),
+  `spotifyDeviceName` (for matching a Web API device entry back to "this
+  machine" — no reliable way to detect that automatically), `nowPlayingStripVisible`,
+  `libraryOverlayWidth`. Added the whole Settings → Music pane (status,
+  client id field, sign-in/out button, device name, strip toggle) — the
+  sidebar tab already existed and was empty.
+- **Verified live**, not just visually: wrote a standalone `QCoreApplication`
+  harness (moc'd and linked directly against `MprisController.cpp`, no QML/DB
+  needed) against the real `org.mpris.MediaPlayer2.brave.*` session already on
+  this machine's bus. Confirmed: correct discovery, real title/artist/artUrl/
+  position/duration read back, `positionRatio` computed correctly, and
+  `togglePlayPause()` actually flips the live session's play state and back
+  (1→0→1), proving the D-Bus write path reaches a real player, not just the
+  read path. Then verified the full app: `NowPlayingStrip` rendering with
+  that same live data in expanded mode, the bar-mode compact transport, the
+  task drawer still overlaying correctly (no regression from restructuring
+  `MainWindow.qml` to fit the strip in), and `LibraryOverlay` opening with
+  real live art in the "now playing" hero and the "Connect your Spotify
+  account" gate correctly shown for playlists/search (no client id
+  configured). Zero QML warnings across expanded/bar/PiP on both a fresh
+  profile and the real user profile.
+- **Not verified**: the actual PKCE round-trip (needs a registered Spotify
+  Developer app — a client id only the user can create), `spotifyd` itself
+  (a binary appeared under `external-binaries/` mid-session, presumably
+  downloaded as a workaround since `sudo pacman -S` needs an interactive
+  password this environment can't supply; running an unverified binary with
+  no provenance check was correctly blocked by the permission layer, and I
+  did not try to work around that), and real Wayland pointer input for
+  `LibraryOverlay`'s drag/hover affordances.
+- Installing `spotifyd` and `qtkeychain-qt6` (both in the official Arch repos)
+  needs `sudo`, which can't run interactively here — left for the user; see
+  the updated README's Dependencies section.
+
 ## Known gaps / next session
 
 1. **The real profile may still hold old degraded geometry** from before the
@@ -389,6 +467,17 @@ visible when opened from bar mode. The visual spec (session 7's read of
    headlessly on this machine.
 6. The `DateTimeField` SpinBoxes still render in light Fusion colors against the
    dark popup — cosmetic, unstyled.
+7. Install `spotifyd` and `qtkeychain-qt6` (`sudo pacman -S spotifyd
+   qtkeychain-qt6`), register a Spotify Developer app for the PKCE client id,
+   and smoke-test the real sign-in flow end to end — none of this could be
+   done from this session (no interactive sudo, no ability to register an
+   OAuth app). `external-binaries/spotifyd-linux-x86_64-full/` has a
+   prebuilt `spotifyd` binary of unconfirmed provenance; safer to install the
+   pacman package than run it as-is.
+8. `MprisController`'s player-selection heuristic (prefer a service name
+   containing "spotify", else whichever appeared first) is untested against
+   more than one simultaneous MPRIS player — reasonable in the common case,
+   but worth a look if multiple media apps are ever open together.
 
 ## Resume instructions
 

@@ -145,6 +145,61 @@ Popup {
                         onPicked: SettingsController.progressBasis = (index === 0 ? "active" : "logged")
                     }
                 }
+                // Client id is the only piece of PKCE config that lives here:
+                // it is public by design (no secret ships). The refresh token
+                // this produces never touches this settings table — see
+                // SpotifyWebApi, which stores it in the system keyring.
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Spotify status"; key: "SpotifyWebApi.authState"
+                    Text {
+                        text: SpotifyWebApi.authState === "linked" ? "Signed in"
+                            : SpotifyWebApi.authState === "linking" ? "Signing in…"
+                            : SpotifyWebApi.authState === "expired" ? "Session expired — sign in again"
+                            : "Not signed in"
+                        font.family: Theme.fontFamily; font.pixelSize: 13
+                        color: SpotifyWebApi.authState === "linked" ? Theme.accent : Theme.textDim
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Client ID"; key: "spotifyClientId"
+                    PoloTextField {
+                        implicitWidth: 260
+                        text: SettingsController.spotifyClientId
+                        placeholder: "From developer.spotify.com"
+                        onEditingFinished: SettingsController.spotifyClientId = text
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Sign in"; key: "OAuth PKCE, no client secret"
+                    PillButton {
+                        label: SpotifyWebApi.authState === "linked" ? "Sign out" : "Sign in"
+                        primary: SpotifyWebApi.authState !== "linked"
+                        enabled: SettingsController.spotifyClientId.length > 0
+                        onClicked: SpotifyWebApi.authState === "linked" ? SpotifyWebApi.signOut() : SpotifyWebApi.beginPkce()
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "This machine's device name"; key: "spotifyDeviceName"
+                    PoloTextField {
+                        implicitWidth: 260
+                        text: SettingsController.spotifyDeviceName
+                        placeholder: "spotifyd --device-name value"
+                        onEditingFinished: SettingsController.spotifyDeviceName = text
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Now-playing strip"; key: "nowPlayingStripVisible"
+                    PoloToggle {
+                        checked: SettingsController.nowPlayingStripVisible
+                        onToggled: SettingsController.nowPlayingStripVisible = checked
+                    }
+                }
+
                 SettingRow {
                     visible: root.section === 5
                     label: "Export sessions"; key: "CSV to ~/Documents"

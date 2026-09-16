@@ -78,7 +78,24 @@ Rectangle {
             }
 
             Divider {}
-            SpotifyMediaControls { Layout.preferredWidth: 96 }
+            // SpotifyMediaControls was deleted with the WebEngine pivot; the
+            // updated reference bundle's ProgressBarView.qml still names it
+            // (stale — the pivot only reached NowPlayingLabel there), so this
+            // is the compact MPRIS transport in its place, matching the
+            // prev/playpause/next set in NowPlayingStrip.
+            RowLayout {
+                Layout.preferredWidth: 96
+                spacing: Theme.xs + 2
+                enabled: MprisController.available
+                opacity: enabled ? 1 : 0.4
+                IconButton { glyph: "prev"; small: true; onClicked: MprisController.previous() }
+                IconButton {
+                    glyph: MprisController.isPlaying ? "pause" : "play"
+                    filled: true
+                    onClicked: MprisController.togglePlayPause()
+                }
+                IconButton { glyph: "next"; small: true; onClicked: MprisController.next() }
+            }
             Divider {}
 
             OverallProgressBar {

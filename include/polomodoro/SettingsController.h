@@ -26,6 +26,10 @@ class SettingsController : public QObject {
     Q_PROPERTY(QString accentManualPalette READ accentManualPalette WRITE setAccentManualPalette NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList palettePresets READ palettePresets CONSTANT)
     Q_PROPERTY(QString integrityReport READ integrityReport NOTIFY settingsChanged)
+    Q_PROPERTY(bool nowPlayingStripVisible READ nowPlayingStripVisible WRITE setNowPlayingStripVisible NOTIFY settingsChanged)
+    Q_PROPERTY(int libraryOverlayWidth READ libraryOverlayWidth NOTIFY settingsChanged)
+    Q_PROPERTY(QString spotifyClientId READ spotifyClientId WRITE setSpotifyClientId NOTIFY settingsChanged)
+    Q_PROPERTY(QString spotifyDeviceName READ spotifyDeviceName WRITE setSpotifyDeviceName NOTIFY settingsChanged)
 public:
     explicit SettingsController(SettingsStore &store, QObject *parent = nullptr);
     ~SettingsController();
@@ -46,6 +50,10 @@ public:
     QString accentManualPalette() const;
     QVariantList palettePresets() const;
     QString integrityReport() const;
+    bool nowPlayingStripVisible() const;
+    int libraryOverlayWidth() const;
+    QString spotifyClientId() const;
+    QString spotifyDeviceName() const;
 
     void setAlwaysOnTop(bool value);
     void setBackgroundSource(const QString &value);
@@ -60,6 +68,9 @@ public:
     void setProgressBasis(const QString &value);
     void setAccentMode(const QString &value);
     void setAccentManualPalette(const QString &value);
+    void setNowPlayingStripVisible(bool value);
+    void setSpotifyClientId(const QString &value);
+    void setSpotifyDeviceName(const QString &value);
 
     Q_INVOKABLE int pomodoroWorkMs() const;
     Q_INVOKABLE int pomodoroShortBreakMs() const;

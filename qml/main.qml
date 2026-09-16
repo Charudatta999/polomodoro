@@ -102,7 +102,7 @@ ApplicationWindow {
     }
 
     TaskMenuDrawer { id: taskDrawer }
-    SettingsView { id: settings }
+    SettingsView { id: settings; objectName: "settingsView" }
 
     function toggleTaskDrawer() {
         if (taskDrawer.opened) {

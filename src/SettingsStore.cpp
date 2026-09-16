@@ -47,6 +47,16 @@ void SettingsStore::seedDefaults()
     ensure(QStringLiteral("notifyOnEndDateApproaching"), QStringLiteral("true"));
     ensure(QStringLiteral("showDayTimeline"), QStringLiteral("true"));
     ensure(QStringLiteral("accentMode"), QStringLiteral("auto"));
+
+    // Spotify Web API (PKCE) — client id is public by design (no secret
+    // ships), but there is no default that works for every install, so none
+    // is invented here; Settings prompts for one. The refresh token itself
+    // never goes here — see SpotifyWebApi, which uses the system keyring.
+    ensure(QStringLiteral("spotifyClientId"), QString());
+    ensure(QStringLiteral("spotifyRedirectPort"), QStringLiteral("8888"));
+    ensure(QStringLiteral("spotifyDeviceName"), QString());
+    ensure(QStringLiteral("nowPlayingStripVisible"), QStringLiteral("true"));
+    ensure(QStringLiteral("libraryOverlayWidth"), QStringLiteral("520"));
 }
 
 QString SettingsStore::getString(const QString &key, const QString &defaultValue) const

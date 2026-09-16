@@ -8,7 +8,7 @@ Item {
     clip: true
     implicitHeight: label.implicitHeight
 
-    readonly property string trackText: SpotifyController.nowPlayingLabel
+    readonly property string trackText: MprisController.nowPlayingLabel
     readonly property bool hasTrack: trackText.length > 0
     readonly property bool overflowing: hasTrack && label.implicitWidth > root.width
 
@@ -38,7 +38,7 @@ Item {
     }
 
     Connections {
-        target: SpotifyController
+        target: MprisController
         function onPlaybackChanged() {
             label.x = 0
             scrollAnim.stop()

@@ -2,12 +2,12 @@
 #include <polomodoro/BackgroundManager.h>
 #include <polomodoro/DayTimelineModel.h>
 #include <polomodoro/DatabaseManager.h>
+#include <polomodoro/MprisController.h>
 #include <polomodoro/NotificationManager.h>
 #include <polomodoro/SettingsController.h>
 #include <polomodoro/SettingsStore.h>
 #include <polomodoro/ShutdownGuard.h>
-#include <polomodoro/SpotifyArtBridge.h>
-#include <polomodoro/SpotifyController.h>
+#include <polomodoro/SpotifyWebApi.h>
 #include <polomodoro/TaskController.h>
 #include <polomodoro/TaskTree.h>
 #include <polomodoro/TimerController.h>
@@ -15,8 +15,6 @@
 #include <polomodoro/WindowLayoutManager.h>
 
 #include <QDir>
-#include <QFileInfo>
-#include <QVersionNumber>
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -31,8 +29,6 @@
 #include <qqml.h>
 
 #include <polomodoro/TaskTreeModel.h>
-#include <QtWebEngineQuick/QQuickWebEngineProfile>
-#include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
 // This Qt build filters the "qml" logging category to nothing, so console.*
 // and qmlWarning() (including delegate-creation failures, which are otherwise
@@ -45,50 +41,6 @@ static void verboseMessageHandler(QtMsgType type, const QMessageLogContext &ctx,
             ctx.file ? ctx.file : "-", ctx.line);
 }
 
-// Spotify's web player is DRM-gated and refuses to play without a Widevine
-// CDM, reporting it as "you block protected content / incompatible browser".
-// QtWebEngine only looks in ~/.config/chromium and ~/.config/google-chrome,
-// which a machine with neither installed will not have — even though other
-// Chromium-based apps here have already downloaded a perfectly good CDM. Find
-// one and point QtWebEngine at it explicitly.
-static QString findWidevineCdm()
-{
-    const QString home = QDir::homePath();
-    const QStringList roots = {
-        home + QStringLiteral("/.config/chromium/WidevineCdm"),
-        home + QStringLiteral("/.config/google-chrome/WidevineCdm"),
-        home + QStringLiteral("/.config/BraveSoftware/Brave-Browser/WidevineCdm"),
-        home + QStringLiteral("/.config/Netflix/WidevineCdm"),
-        home + QStringLiteral("/.cache/spotify/WidevineCdm"),
-        QStringLiteral("/opt/google/chrome/WidevineCdm"),
-        QStringLiteral("/usr/lib/chromium/WidevineCdm"),
-    };
-
-    QString best;
-    QVersionNumber bestVersion;
-    for (const QString &root : roots) {
-        QDir dir(root);
-        if (!dir.exists())
-            continue;
-        const QStringList versions =
-            dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-        for (const QString &v : versions) {
-            const QString so = root + QLatin1Char('/') + v
-                + QStringLiteral("/_platform_specific/linux_x64/libwidevinecdm.so");
-            if (!QFileInfo::exists(so))
-                continue;
-            const QVersionNumber version = QVersionNumber::fromString(v);
-            if (best.isEmpty() || version > bestVersion) {
-                best = so;
-                bestVersion = version;
-            }
-        }
-    }
-    return best;
-}
-
-static QString g_widevineCdmPath;
-
 int main(int argc, char *argv[])
 {
     if (qEnvironmentVariableIsSet("POLOMODORO_VERBOSE")) {
@@ -96,26 +48,10 @@ int main(int argc, char *argv[])
         qInstallMessageHandler(verboseMessageHandler);
     }
 
-    // Must happen before QtWebEngineQuick::initialize(): the flags are read
-    // when Chromium starts up, not when a view is created.
-    g_widevineCdmPath = findWidevineCdm();
-    if (const QString cdm = g_widevineCdmPath; !cdm.isEmpty()) {
-        QString flags = qEnvironmentVariable("QTWEBENGINE_CHROMIUM_FLAGS");
-        if (!flags.contains(QStringLiteral("--widevine-path"))) {
-            if (!flags.isEmpty())
-                flags += QLatin1Char(' ');
-            flags += QStringLiteral("--widevine-path=") + cdm;
-            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags.toUtf8());
-        }
-    } else {
-        fprintf(stderr, "Widevine CDM not found — Spotify playback will be refused.\n");
-    }
-
     QCoreApplication::setOrganizationName(QStringLiteral("Polomodoro"));
     QCoreApplication::setApplicationName(QStringLiteral("polomodoro"));
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
-    QtWebEngineQuick::initialize();
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
@@ -142,14 +78,27 @@ int main(int argc, char *argv[])
     taskTree.load();
 
     polomodoro::BackgroundManager backgroundManager(settings);
-    polomodoro::SpotifyArtBridge spotifyBridge;
 
     polomodoro::TimerController timerController(timerEngine, settings);
     polomodoro::TaskController taskController(taskTree, settings);
     polomodoro::SettingsController settingsController(settings);
     polomodoro::BackgroundController backgroundController(backgroundManager, settings);
-    polomodoro::SpotifyController spotifyController(spotifyBridge);
     polomodoro::WindowLayoutManager windowLayout(settings);
+
+    // Playback pivot (2026-09-17): Qt WebEngine and the embedded Spotify web
+    // player are gone. Transport is whatever MPRIS player is on the session
+    // bus (spotifyd, the official client, anything); browsing/search/devices
+    // are the Spotify Web API over OAuth PKCE.
+    polomodoro::MprisController mprisController;
+    polomodoro::SpotifyWebApi spotifyWebApi(settings);
+
+    // mpris:artUrl is a real CDN URL — the palette deriver's actual input,
+    // where the old build had none until a track loaded in the WebEngineView.
+    QObject::connect(&mprisController, &polomodoro::MprisController::playbackChanged, &backgroundController,
+                     [&]() {
+                         backgroundManager.setSpotifyArtUrl(mprisController.artUrl());
+                         emit backgroundController.backgroundChanged();
+                     });
 
     polomodoro::DayTimelineModel dayTimeline(taskTree);
     // Any task mutation can add, move or remove a block on the timeline.
@@ -175,39 +124,12 @@ int main(int argc, char *argv[])
                          notificationManager.notify(QStringLiteral("Pomodoro complete"),
                                                      QStringLiteral("Time for a break."));
                      });
-
-    const QString spotifyData =
-        QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-        + QStringLiteral("/spotify-profile");
-    const QString spotifyCache =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
-        + QStringLiteral("/spotify-profile");
-    QDir().mkpath(spotifyData);
-    QDir().mkpath(spotifyCache);
-
-    QQuickWebEngineProfile spotifyProfile(QStringLiteral("polomodoro-spotify"));
-    spotifyProfile.setOffTheRecord(false);
-    spotifyProfile.setPersistentStoragePath(spotifyData);
-    spotifyProfile.setCachePath(spotifyCache);
-    spotifyProfile.setPersistentCookiesPolicy(QQuickWebEngineProfile::ForcePersistentCookies);
-    spotifyProfile.setHttpCacheType(QQuickWebEngineProfile::DiskHttpCache);
-    spotifyProfile.setPersistentPermissionsPolicy(
-        QQuickWebEngineProfile::PersistentPermissionsPolicy::StoreOnDisk);
-    spotifyProfile.setHttpUserAgent(
-        QStringLiteral("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
-                       "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"));
-
     QObject::connect(&timerController, &polomodoro::TimerController::workSegmentCompleted, &app,
                      [&](qint64 durationMs) {
                          const QDateTime started = QDateTime::currentDateTimeUtc().addMSecs(-durationMs);
                          for (const polomodoro::TaskNode *task : taskTree.activeTasks())
                              taskTree.addSession(task->id, started, durationMs, QStringLiteral("pomodoro"));
                      });
-
-    QObject::connect(&spotifyBridge, &polomodoro::SpotifyArtBridge::metadataChanged, &backgroundController, [&]() {
-        backgroundManager.setSpotifyArtUrl(spotifyBridge.artUrl());
-        emit backgroundController.backgroundChanged();
-    });
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::warnings, &engine, [](const QList<QQmlError> &warnings) {
@@ -219,19 +141,15 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("TaskController"), &taskController);
     ctx->setContextProperty(QStringLiteral("SettingsController"), &settingsController);
     ctx->setContextProperty(QStringLiteral("BackgroundController"), &backgroundController);
-    ctx->setContextProperty(QStringLiteral("SpotifyController"), &spotifyController);
+    ctx->setContextProperty(QStringLiteral("MprisController"), &mprisController);
+    ctx->setContextProperty(QStringLiteral("SpotifyWebApi"), &spotifyWebApi);
     ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
     ctx->setContextProperty(QStringLiteral("DayTimelineModel"), &dayTimeline);
-    // Empty when no CDM was found; the Spotify drawer shows the DRM notice.
-    ctx->setContextProperty(QStringLiteral("WidevineCdmPath"), g_widevineCdmPath);
     ctx->setContextProperty(QStringLiteral("timerController"), &timerController);
     ctx->setContextProperty(QStringLiteral("taskController"), &taskController);
     ctx->setContextProperty(QStringLiteral("settingsController"), &settingsController);
     ctx->setContextProperty(QStringLiteral("backgroundController"), &backgroundController);
-    ctx->setContextProperty(QStringLiteral("spotifyController"), &spotifyController);
-    ctx->setContextProperty(QStringLiteral("spotifyBridge"), &spotifyBridge);
     ctx->setContextProperty(QStringLiteral("windowLayout"), &windowLayout);
-    ctx->setContextProperty(QStringLiteral("SpotifyWebProfile"), &spotifyProfile);
 
     qmlRegisterSingletonType(QUrl(QStringLiteral("qrc:/qml/Theme.qml")), "Polomodoro", 1, 0, "Theme");
     qmlRegisterUncreatableType<polomodoro::TaskTreeModel>(
