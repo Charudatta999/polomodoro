@@ -58,16 +58,161 @@ Last updated: 2026-09-16 (session 1)
 
 ## Known gaps / next session
 
-1. Wire global keyboard shortcuts (`QShortcut` in C++ or `Shortcut` in QML)
-2. Add logind D-Bus `PrepareForShutdown` flush (needs QtDBus in CMake)
-3. Desktop notifications for target reached (`org.freedesktop.Notifications`)
-4. TaskEditor integration in drawer (schedule date/time pickers)
-5. Bundled default wallpaper images in `resources/backgrounds/`
-6. Nested tree display in TaskTreeModel (currently flat per bucket)
-7. Target-reached detection + `targetReachedAt` persistence
-8. `loggedWorkMs` progress basis UI in settings
+1. ~~Wire global keyboard shortcuts~~ — already done (`qml/main.qml` `Shortcut` items: play/pause, reset, skip, mode switch, view modes, PiP, always-on-top, background cycle, music toggle, task drawer, new task, settings, tab cycle)
+2. Add logind D-Bus `PrepareForShutdown` flush (needs QtDBus in CMake — QtDBus now linked for notifications, so this is easier to add)
+3. ~~Desktop notifications for target reached~~ — done: `NotificationManager` (org.freedesktop.Notifications via QtDBus), fires on task target reached and pomodoro segment completion
+4. ~~TaskEditor integration in drawer (schedule date/time pickers)~~ — done: ported `DateTimeField`, `TargetTimeEditor`, full `TaskEditor` (title/parent/starts/due/target) from the deliverable; `TaskController::save()` + `parentChoices` + `reparentTask()` added
+5. Bundled default wallpaper images in `resources/backgrounds/` (only one default wallpaper exists)
+6. ~~Nested tree display in TaskTreeModel (currently flat per bucket)~~ — done: `TaskTree::flattenBucket()` walks the real hierarchy, keeping ancestor context for any matching descendant; `depth`/`hasPrevSibling` roles now reflect real tree position
+7. ~~Target-reached detection + `targetReachedAt` persistence~~ — done: `TaskController::checkTargets()` runs every tick, persists `targetReachedAt`, emits `targetReached` signal
+8. `loggedWorkMs` progress basis UI in settings (basis is stored/read but no settings toggle exposed yet)
 9. Test on Hyprland/Wayland with real Spotify login
-10. Fix ActiveTasksBar to use dedicated active-only model filter
+10. ~~Fix ActiveTasksBar to use dedicated active-only model filter~~ — already used `TaskController.activeChips` (dedicated active-task list), not the shared tree model
+
+### Session 2 (2026-09-16, continued)
+- **Nested task tree**: `TaskTree::flattenBucket()` replaces the flat `tasksInBucket()` walk for model display — includes ancestor chain of any matching descendant so hierarchy is visible, with correct `depth` and `hasPrevSibling` per row.
+- **Target-reached + notifications**: added `polomodoro::NotificationManager` (QtDBus, `org.freedesktop.Notifications`), wired to `TaskController::targetReached` and `TimerController::workSegmentCompleted`. `TaskController::checkTargets()` persists `targetReachedAt` once a task's progress crosses its target.
+- **TaskEditor scheduling UI**: ported `DateTimeField` (MonthGrid popup, local display/UTC storage), `TargetTimeEditor` (h/m spinboxes + presets, `setFromMs()`), and the full `TaskEditor` (title/parent/starts/due/target validation) from the deliverable. Added `TaskController::save()`, `parentChoices`, and `TaskTree::reparentTask()` (moves a task, with cycle/self-parent guards) to back it. Wired `TaskController::editRequested`/`createRequested` to `TaskMenuDrawer`'s editor via `Connections` (previously unconnected — right-click "Edit…"/"Add subtask" did nothing).
+- **Global shortcuts**: reviewed `qml/main.qml` — already complete from a prior pass; no changes needed.
+- Fixed a `font.pixelSize: 10.5` in the ported `TaskEditor.qml` (pixelSize needs an int; produced a silent QML warning that prevented root object creation).
+- Added a `QQmlApplicationEngine::warnings` handler in `main.cpp` to print QML errors to stderr — this environment doesn't surface them via `qWarning` by default, which made the above bug invisible until explicitly hooked.
+
+### Session 3 (2026-09-16, live UI debugging)
+
+Drove the actual running app on the real desktop (GNOME screenshot portal for
+screenshots, `ydotool` for input) to reproduce the user's report: "PiP/bar
+mode — tasks added but not shown, calendar not interactive, progress bar not
+visible."
+
+- **Root cause found and fixed — task rows rendered blank.** In
+  `qml/components/TaskTreeView.qml`, the `ListView` delegate did
+  `task: model` / `depth: model.depth`, relying on the bare `model`
+  identifier to mean "this row's data." The `ListView` itself also has its
+  own `model` *property* (`model: TaskController.proxyFor(bucket)`), and on
+  this Qt/QML build that outer property won the name lookup instead of the
+  per-row delegate context. Every `TaskRow` was silently bound to the
+  *entire* `TaskTreeModel` object instead of one row, so every role
+  (`title`, `hasTarget`, `progressRatio`, `startable`, …) evaluated to
+  `undefined` — QML then resets each property to its type default (empty
+  string → invisible titles; `true` for `ProgressTrough.visible` → a stray
+  gray line always showing regardless of `hasTarget`). This is what read as
+  "tasks added but not shown."
+  **Fix**: declare `required property var model` directly on the delegate
+  instance so Qt injects the correct per-row object there instead of
+  falling through to the outer property. One-line change,
+  `qml/components/TaskTreeView.qml`.
+- **Secondary fix — full model reset every second.** `TaskController`'s 1s
+  live timer called `refreshAllModels()` (full `beginResetModel`/
+  `endResetModel` across all 6 task models) unconditionally, even though
+  bucket membership never changes from a plain tick. This tears down and
+  recreates every delegate every second — wasteful, and a likely source of
+  transient blank/flicker frames independent of the bug above. Added
+  `TaskTreeModel::tick()` (targeted `dataChanged` for the live-time-derived
+  roles only) and switched the live timer to call that instead; full resets
+  are now reserved for actual structural changes (create/start/stop/delete/
+  reparent/etc.).
+- **Debugging note for next time**: this environment's Qt build has
+  `QT_NO_DEBUG_OUTPUT` in effect (or an equivalent), so `console.log`/
+  `console.warn`/`console.error` from QML produce **no output at all**
+  unless launched with `QT_LOGGING_RULES="*=true"` — the `qml` logging
+  category is off by default and silently swallows every level, including
+  `error`. Confirmed the app's own `QQmlApplicationEngine::warnings` signal
+  (wired to stderr in `main.cpp` since session 2) is a *different* channel
+  from `console.*` and unaffected by this — it kept working the whole time,
+  which is what pointed at the bug in the first place via
+  "Unable to assign [undefined] to ..." warnings.
+- Did **not** get to: PiP/bar-mode progress-bar visibility and calendar
+  (`DateTimeField` MonthGrid) interactivity — the task-list bug above turned
+  out to be the first domino, worth re-testing those two once this fix is
+  confirmed live, since a blank/broken task-role binding could plausibly
+  have been masking or contributing to both.
+
+### Session 4 (2026-09-16, PiP/bar + calendar verification)
+
+Re-tested the two items left open by session 3. Neither was downstream of the
+task-row bug; they were separate, and one of them was not really the bug it
+looked like.
+
+- **Screenshot tooling.** This desktop denies both the GNOME Shell screenshot
+  D-Bus interface and the xdg portal, and there is no `grim`/`xwininfo`. Added
+  an env-gated self-grab to `main.cpp`: `POLOMODORO_SCREENSHOT=<path>` plus
+  optional `POLOMODORO_SCREENSHOT_DELAY=<ms>` and `POLOMODORO_VIEW_MODE=<0|1|2>`
+  makes the app render, `grabWindow()` itself, and exit. The mode switch is
+  fired from inside the running event loop, not before `exec()` — pre-exec the
+  window is not mapped yet and size constraints behave differently.
+- **`console.log`/`warn`/`error` are dead even with `QT_LOGGING_RULES="*=true"`.**
+  Session 3 assumed that env var restored them; it does not. Both
+  `QT_NO_DEBUG_OUTPUT` and warning output are compiled out. The only working
+  QML-side channels are the `QQmlApplicationEngine::warnings` hook and
+  `Qt.exit(<code>)` as a smuggled-out integer. Several probes here used the
+  exit code to report measured values.
+- **The progress bars were never broken.** In both bar and PiP mode they render
+  correctly (verified at 43% for a seeded 25min/60min task). They are gated on
+  there being an active task *with a target* — the real DB has two `stopped`
+  tasks with `target_ms` NULL, so there was nothing to draw. Bar mode correctly
+  showed "— no active tasks".
+- **PiP mode was genuinely broken, but the cause was window geometry, not the
+  view.** The compact window was 300x**800**. Root cause was a ratchet bug:
+  `WindowLayoutManager::setMode()` emitted `geometryChanged` *before*
+  `viewModeChanged`, so QML applied the incoming mode's geometry while the
+  *outgoing* mode's `minimumWidth`/`minimumHeight` were still in force. Qt
+  silently clamps such an assignment, and the clamped value immediately echoed
+  back through `onWidthChanged` → `rememberGeometry()` and was persisted. Every
+  stored geometry had degraded to its minimum:
+  `expanded 640x420` (default 1280x800), `bar 560x48` (default 800x48),
+  `compact 300x800`. Fixes:
+  - emit `viewModeChanged` before `loadGeometryForCurrentMode()`;
+  - minimum sizes are no longer bindings on `viewMode` — a binding reacting to
+    the same signal gives no ordering guarantee against the handler that writes
+    the geometry. They are now set imperatively in `_applyWindowGeometryNow()`
+    immediately before the assignments;
+  - `_applyingGeometry` starts `true`, so pre-first-apply window transients are
+    not mistaken for user resizes;
+  - a 250ms settle timer re-asserts the geometry after the compositor ack and
+    after the `flags` change (expanded has a titlebar, bar/PiP are frameless)
+    recreates the platform window, and only then reopens the persist guard;
+  - `rememberGeometry()` validates against the current mode before writing;
+  - compact geometry validation gained a max height (`h <= 400`), so the
+    corrupt 300x800 is rejected on read and self-heals to the default.
+  Verified stable across repeated full mode cycles.
+- **The calendar popup was not actually dead.** Isolated-harness testing (real
+  `Theme`, Fusion style, offscreen + `grabToImage`) confirmed the `MonthGrid` is
+  enabled, visible, correctly sized, and that `DateTimeField`'s `onClicked`
+  handler does store the picked date. What was missing was any way to *use* it:
+  no month navigation and no weekday header, so only the current month was ever
+  reachable and the columns were unlabeled. Added `‹ Month Year ›` navigation
+  (with year rollover), a themed `DayOfWeekRow`, a themed day delegate that
+  accents today and dims adjacent-month days, and `onAboutToShow` now opens on
+  the month of the current value rather than today's.
+
+## Known gaps / next session
+
+1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves
+   the width at the expanded width (e.g. 1280x48 instead of 800x48), and that
+   width is then persisted — it is a legal bar width so validation cannot reject
+   it. Not a timing issue: re-asserting the geometry repeatedly does not help.
+   Notably expanded→**compact** (1280→300) shrinks fine, compact→bar (300→800)
+   grows fine, and starting directly in bar mode gives a correct 800x48 — it is
+   specifically the expanded→bar shrink that sticks. Suspect a Wayland
+   size-constraint/window-recreation interaction. Repro:
+   `POLOMODORO_VIEW_MODE=1` from a profile whose stored `viewMode` is `expanded`.
+2. **The real profile still holds the old degraded geometry.** The ratchet is
+   fixed so it will not get worse, but `expandedGeometry` is stuck at its
+   legacy 640x420 (a legal size, so it is preserved rather than reset). To get
+   the intended defaults back:
+   ```bash
+   sqlite3 ~/.config/polomodoro/polomodoro.db \
+     "delete from settings where key like '%Geometry%';"
+   ```
+3. Add logind D-Bus `PrepareForShutdown` flush (QtDBus already linked for
+   notifications, so this is easier to add now)
+4. Bundled default wallpaper images in `resources/backgrounds/` (only one
+   default wallpaper exists)
+5. `loggedWorkMs` progress basis UI in settings (basis is stored/read but no
+   settings toggle exposed yet)
+6. Test on Hyprland/Wayland with real Spotify login
+7. The `DateTimeField` SpinBoxes still render in light Fusion colors against the
+   dark popup — cosmetic, unstyled.
 
 ## Resume instructions
 
@@ -77,4 +222,5 @@ cmake --build build
 ./build/polomodoro
 ```
 
-Continue from "Known gaps" items above, prioritizing shortcuts, nested tree, and notifications.
+Continue from "Known gaps" above — start with re-testing PiP/bar mode and
+the calendar popup now that the task-list rendering bug is fixed.

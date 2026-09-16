@@ -256,6 +256,64 @@ bool TaskTree::deleteTask(const QString &id)
     return true;
 }
 
+namespace {
+
+bool removeFromVector(QVector<TaskNode> &vec, const QString &id, TaskNode &out)
+{
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i].id == id) {
+            out = vec[i];
+            vec.remove(i);
+            return true;
+        }
+    }
+    for (auto &n : vec) {
+        if (removeFromVector(n.children, id, out))
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
+bool TaskTree::reparentTask(const QString &id, const QString &newParentId)
+{
+    if (id == newParentId)
+        return false;
+    TaskNode *node = findById(id);
+    if (!node)
+        return false;
+    if (node->parentId == newParentId)
+        return true;
+    if (!newParentId.isEmpty()) {
+        if (!findById(newParentId))
+            return false;
+        bool isDescendant = false;
+        walk(*node, [&](const TaskNode &n) {
+            if (n.id == newParentId)
+                isDescendant = true;
+        });
+        if (isDescendant)
+            return false;
+    }
+
+    TaskNode moved;
+    if (!removeFromVector(d->roots, id, moved))
+        return false;
+    moved.parentId = newParentId;
+
+    if (!newParentId.isEmpty()) {
+        if (TaskNode *parent = findById(newParentId)) {
+            parent->children.push_back(std::move(moved));
+        } else {
+            d->roots.push_back(std::move(moved));
+        }
+    } else {
+        d->roots.push_back(std::move(moved));
+    }
+    return saveTask(id);
+}
+
 void TaskTree::finalizeActiveSegment(TaskNode &node, const QDateTime &now)
 {
     if (node.status == TaskStatus::Active && node.activeSince.isValid()) {
@@ -421,6 +479,62 @@ QVector<const TaskNode *> TaskTree::activeSubtree() const
             result.push_back(findById(n.id));
         });
     }
+    return result;
+}
+
+namespace {
+
+bool matchesBucketFor(const TaskNode &n, TaskListBucket bucket, bool showCompleted)
+{
+    switch (bucket) {
+    case TaskListBucket::Future: return isFuture(n);
+    case TaskListBucket::Pending: return isPending(n);
+    case TaskListBucket::Active: return n.status == TaskStatus::Active;
+    case TaskListBucket::All: return showCompleted || n.status != TaskStatus::Completed;
+    }
+    return false;
+}
+
+bool subtreeHasMatch(const TaskNode &n, TaskListBucket bucket, bool showCompleted)
+{
+    if (matchesBucketFor(n, bucket, showCompleted))
+        return true;
+    for (const auto &child : n.children) {
+        if (subtreeHasMatch(child, bucket, showCompleted))
+            return true;
+    }
+    return false;
+}
+
+} // namespace
+
+QVector<TaskTree::FlatTreeRow> TaskTree::flattenBucket(TaskListBucket bucket, bool showCompleted) const
+{
+    QVector<FlatTreeRow> result;
+
+    std::function<bool(const TaskNode &, int)> visit = [&](const TaskNode &n, int depth) -> bool {
+        if (!subtreeHasMatch(n, bucket, showCompleted))
+            return false;
+        FlatTreeRow row;
+        row.node = findById(n.id);
+        row.depth = depth;
+        row.hasPrevSibling = false;
+        result.push_back(row);
+        bool anyChildVisible = false;
+        for (const auto &child : n.children) {
+            const int childRowIndex = result.size();
+            const bool visible = visit(child, depth + 1);
+            if (visible) {
+                result[childRowIndex].hasPrevSibling = anyChildVisible;
+                anyChildVisible = true;
+            }
+        }
+        return true;
+    };
+
+    for (const auto &root : d->roots)
+        visit(root, 0);
+
     return result;
 }
 

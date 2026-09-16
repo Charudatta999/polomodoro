@@ -1,6 +1,7 @@
 #include <polomodoro/BackgroundController.h>
 #include <polomodoro/BackgroundManager.h>
 #include <polomodoro/DatabaseManager.h>
+#include <polomodoro/NotificationManager.h>
 #include <polomodoro/SettingsController.h>
 #include <polomodoro/SettingsStore.h>
 #include <polomodoro/ShutdownGuard.h>
@@ -18,8 +19,11 @@
 #include <QQmlApplicationEngine>
 #include <QDateTime>
 #include <QQmlContext>
+#include <QQmlError>
 #include <QQuickStyle>
+#include <QQuickWindow>
 #include <QStandardPaths>
+#include <QTimer>
 #include <qqml.h>
 
 #include <polomodoro/TaskTreeModel.h>
@@ -71,6 +75,19 @@ int main(int argc, char *argv[])
     polomodoro::ShutdownGuard shutdownGuard(database, taskTree);
     shutdownGuard.startHeartbeat(10000);
 
+    polomodoro::NotificationManager notificationManager;
+    QObject::connect(&taskController, &polomodoro::TaskController::targetReached, &app,
+                     [&](const QString &, const QString &title) {
+                         notificationManager.notify(QStringLiteral("Target reached"),
+                                                     title + QStringLiteral(" hit its time target."));
+                     });
+    QObject::connect(&timerController, &polomodoro::TimerController::workSegmentCompleted, &app,
+                     [&](qint64 durationMs) {
+                         Q_UNUSED(durationMs);
+                         notificationManager.notify(QStringLiteral("Pomodoro complete"),
+                                                     QStringLiteral("Time for a break."));
+                     });
+
     const QString spotifyData =
         QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
         + QStringLiteral("/spotify-profile");
@@ -105,6 +122,10 @@ int main(int argc, char *argv[])
     });
 
     QQmlApplicationEngine engine;
+    QObject::connect(&engine, &QQmlApplicationEngine::warnings, &engine, [](const QList<QQmlError> &warnings) {
+        for (const auto &w : warnings)
+            fprintf(stderr, "QML WARNING: %s\n", qUtf8Printable(w.toString()));
+    });
     auto *ctx = engine.rootContext();
     ctx->setContextProperty(QStringLiteral("TimerController"), &timerController);
     ctx->setContextProperty(QStringLiteral("TaskController"), &taskController);
@@ -136,6 +157,40 @@ int main(int argc, char *argv[])
     engine.load(url);
     if (engine.rootObjects().isEmpty())
         return 1;
+
+    // Debug affordance: this desktop denies both the GNOME Shell and the xdg
+    // screenshot portals, so the only way to see what the app actually renders
+    // is to have it grab itself. POLOMODORO_VIEW_MODE forces a view mode first
+    // so bar/PiP can be captured without driving the UI by hand.
+    if (qEnvironmentVariableIsSet("POLOMODORO_SCREENSHOT")) {
+        const QString shotPath = qEnvironmentVariable("POLOMODORO_SCREENSHOT");
+        const int delayMs = qEnvironmentVariableIntValue("POLOMODORO_SCREENSHOT_DELAY") > 0
+            ? qEnvironmentVariableIntValue("POLOMODORO_SCREENSHOT_DELAY")
+            : 1500;
+        // Switch modes from inside the running event loop, not before exec():
+        // pre-exec the window is not yet mapped and the size constraints behave
+        // differently, which is not what a user pressing Ctrl+Shift+2 hits.
+        if (qEnvironmentVariableIsSet("POLOMODORO_VIEW_MODE")) {
+            const int mode = qEnvironmentVariableIntValue("POLOMODORO_VIEW_MODE");
+            QTimer::singleShot(delayMs / 2, &app, [&windowLayout, mode]() {
+                windowLayout.setMode(mode);
+            });
+        }
+
+        QTimer::singleShot(delayMs, &app, [&engine, shotPath]() {
+            auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
+            if (!window) {
+                fprintf(stderr, "SCREENSHOT: root object is not a QQuickWindow\n");
+                QCoreApplication::exit(2);
+                return;
+            }
+            const QImage shot = window->grabWindow();
+            const bool ok = !shot.isNull() && shot.save(shotPath);
+            fprintf(stderr, "SCREENSHOT: %s -> %s (%dx%d)\n", ok ? "saved" : "FAILED",
+                    qUtf8Printable(shotPath), shot.width(), shot.height());
+            QCoreApplication::exit(ok ? 0 : 3);
+        });
+    }
 
     return app.exec();
 }

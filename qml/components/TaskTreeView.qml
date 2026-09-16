@@ -14,6 +14,11 @@ ListView {
     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
     delegate: TaskRow {
+        // Explicitly declared so Qt injects this row's per-item model data
+        // here; the bare "model" identifier is ambiguous with ListView's own
+        // `model` property (the whole TaskTreeModel) and resolves to that
+        // instead of the per-row context on this Qt/QML version.
+        required property var model
         width: root.width
         task: model
         depth: model.depth

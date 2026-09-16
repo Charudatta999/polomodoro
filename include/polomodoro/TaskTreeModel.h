@@ -45,7 +45,9 @@ public:
     void setBucketFilter(const QString &bucket);
     void setActiveSubtreeFilter(bool enabled);
     void setProgressBasis(const QString &basis);
+    void setShowCompleted(bool enabled);
     void refresh();
+    void tick();
 
     QModelIndex index(int row, int column, const QModelIndex &parent = {}) const override;
     QModelIndex parent(const QModelIndex &child) const override;
@@ -60,12 +62,14 @@ private:
         const void *nodePtr = nullptr;
         QString parentId;
         int depth = 0;
+        bool hasPrevSibling = false;
     };
 
     QVector<FlatRow> m_rows;
     TaskTree &m_tree;
     QString m_bucketFilter = QStringLiteral("all");
     bool m_activeSubtree = false;
+    bool m_showCompleted = false;
     QString m_progressBasis = QStringLiteral("active");
 
     void rebuild();

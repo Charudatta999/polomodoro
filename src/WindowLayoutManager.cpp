@@ -51,7 +51,7 @@ static bool isValidGeometryForMode(const QString &mode, int w, int h)
     if (mode == QStringLiteral("bar"))
         return w >= 560 && h >= 40 && h <= 300;
     if (mode == QStringLiteral("compact"))
-        return w >= 260 && h >= 120 && w <= 500;
+        return w >= 260 && w <= 500 && h >= 120 && h <= 400;
     return false;
 }
 
@@ -114,8 +114,14 @@ void WindowLayoutManager::setMode(int mode)
         setAlwaysOnTop(true);
     else if (mode == 2 && d->settings.getBool(QStringLiteral("pipAutoAlwaysOnTop"), true))
         setAlwaysOnTop(true);
-    loadGeometryForCurrentMode();
+    // Mode before geometry: QML's per-mode minimumWidth/minimumHeight react to
+    // viewModeChanged, and they have to be relaxed *before* the new geometry is
+    // assigned. Emitting geometryChanged first makes Qt clamp the incoming size
+    // to the outgoing mode's minimum, and the clamped value is then echoed back
+    // through rememberGeometry() — which is how the stored geometry for every
+    // mode ratcheted down to its minimum.
     emit viewModeChanged();
+    loadGeometryForCurrentMode();
 }
 
 void WindowLayoutManager::togglePip()
@@ -127,6 +133,13 @@ void WindowLayoutManager::rememberGeometry(int x, int y, int w, int h)
 {
     // Persist only — updating properties here caused a width/height binding loop
     // with ApplicationWindow.
+    //
+    // Reject sizes that are impossible for the current mode. The QML side guards
+    // against persisting transient geometry, but this is the single choke point
+    // for every write, so validating here keeps one stray resize echo from
+    // poisoning the stored layout for a mode.
+    if (!isValidGeometryForMode(d->viewModeKey, w, h))
+        return;
     saveGeometry(d->viewModeKey, x, y, w, h);
 }
 

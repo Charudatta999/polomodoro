@@ -46,6 +46,7 @@ public:
     QString createTask(const QString &title, const QString &parentId = {});
     bool updateTask(const TaskNode &node);
     bool deleteTask(const QString &id);
+    bool reparentTask(const QString &id, const QString &newParentId);
 
     bool startTask(const QString &id);
     bool pauseTask(const QString &id);
@@ -64,6 +65,13 @@ public:
     QVector<const TaskNode *> activeTasks() const;
     QVector<const TaskNode *> tasksInBucket(TaskListBucket bucket) const;
     QVector<const TaskNode *> activeSubtree() const;
+
+    struct FlatTreeRow {
+        const TaskNode *node = nullptr;
+        int depth = 0;
+        bool hasPrevSibling = false;
+    };
+    QVector<FlatTreeRow> flattenBucket(TaskListBucket bucket, bool showCompleted) const;
 
     double overallProgressRatio(const QString &basis) const;
 

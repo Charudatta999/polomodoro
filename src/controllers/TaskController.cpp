@@ -47,7 +47,9 @@ TaskController::TaskController(TaskTree &tree, SettingsStore &settings, QObject 
     d->liveTimer.setInterval(1000);
     connect(&d->liveTimer, &QTimer::timeout, this, [this]() {
         d->tree->promoteFutureTasks();
-        refreshAllModels();
+        checkTargets();
+        for (TaskTreeModel *m : {d->model.get(), d->activeModel.get(), d->pendingModel.get(), d->futureModel.get(), d->allModel.get(), d->activeSubtreeModel.get()})
+            m->tick();
         emit tasksChanged();
     });
     d->liveTimer.start();
@@ -126,6 +128,18 @@ QVariant TaskController::soleTargetedActiveTask() const
     };
 }
 
+QVariantList TaskController::parentChoices() const
+{
+    QVariantList list;
+    for (const TaskNode *node : d->tree->tasksInBucket(TaskListBucket::All)) {
+        list.push_back(QVariantMap{
+            {QStringLiteral("id"), node->id},
+            {QStringLiteral("title"), node->title},
+        });
+    }
+    return list;
+}
+
 bool TaskController::menuOpen() const { return d->menuOpen; }
 bool TaskController::showCompleted() const { return d->showCompleted; }
 
@@ -164,6 +178,8 @@ void TaskController::setShowCompleted(bool value)
     if (d->showCompleted == value)
         return;
     d->showCompleted = value;
+    for (TaskTreeModel *m : {d->model.get(), d->activeModel.get(), d->pendingModel.get(), d->futureModel.get(), d->allModel.get(), d->activeSubtreeModel.get()})
+        m->setShowCompleted(value);
     refreshAllModels();
     emit tasksChanged();
 }
@@ -241,6 +257,43 @@ void TaskController::loadInto(QObject *editor, const QString &id)
         return;
     editor->setProperty("taskId", id);
     editor->setProperty("title", node->title);
+    editor->setProperty("parentId", node->parentId);
+    editor->setProperty("scheduledStartAt",
+                         node->scheduledStartAt.isValid() ? QVariant(node->scheduledStartAt) : QVariant());
+    editor->setProperty("scheduledEndAt",
+                         node->scheduledEndAt.isValid() ? QVariant(node->scheduledEndAt) : QVariant());
+    editor->setProperty("targetMs", node->targetMs > 0 ? node->targetMs : 0);
+}
+
+void TaskController::save(const QVariantMap &data)
+{
+    const QString id = data.value(QStringLiteral("id")).toString();
+    const QString title = data.value(QStringLiteral("title")).toString().trimmed();
+    const QString parentId = data.value(QStringLiteral("parentId")).toString();
+    const QVariant startV = data.value(QStringLiteral("scheduledStartAt"));
+    const QVariant endV = data.value(QStringLiteral("scheduledEndAt"));
+    const qint64 targetMs = data.value(QStringLiteral("targetMs"), 0).toLongLong();
+
+    QString taskId = id;
+    if (taskId.isEmpty()) {
+        taskId = d->tree->createTask(title, parentId);
+    } else {
+        if (TaskNode *node = d->tree->findById(taskId))
+            node->title = title;
+        d->tree->reparentTask(taskId, parentId);
+    }
+
+    if (TaskNode *node = d->tree->findById(taskId)) {
+        node->scheduledStartAt = (startV.isValid() && !startV.isNull()) ? startV.toDateTime().toUTC() : QDateTime();
+        node->scheduledEndAt = (endV.isValid() && !endV.isNull()) ? endV.toDateTime().toUTC() : QDateTime();
+        node->targetMs = targetMs > 0 ? targetMs : -1;
+        if (node->targetMs <= 0)
+            node->targetReachedAt = QDateTime();
+        d->tree->saveTask(taskId);
+    }
+
+    refreshAllModels();
+    emit tasksChanged();
 }
 void TaskController::openDrawerOnActive()
 {
@@ -293,6 +346,21 @@ void TaskController::refresh()
 {
     refreshAllModels();
     emit tasksChanged();
+}
+
+void TaskController::checkTargets()
+{
+    for (const TaskNode *constNode : d->tree->tasksInBucket(TaskListBucket::All)) {
+        if (constNode->targetMs <= 0 || constNode->targetReachedAt.isValid())
+            continue;
+        if (d->tree->progressRatio(*constNode, d->progressBasis) < 1.0)
+            continue;
+        if (TaskNode *node = d->tree->findById(constNode->id)) {
+            node->targetReachedAt = QDateTime::currentDateTimeUtc();
+            d->tree->saveTask(node->id);
+            emit targetReached(node->id, node->title);
+        }
+    }
 }
 
 } // namespace polomodoro

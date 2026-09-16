@@ -27,6 +27,7 @@ class TaskController : public QObject {
     Q_PROPERTY(QVariantList activeChips READ activeChips NOTIFY tasksChanged)
     Q_PROPERTY(QString combinedActiveLabel READ combinedActiveLabel NOTIFY tasksChanged)
     Q_PROPERTY(QVariant soleTargetedActiveTask READ soleTargetedActiveTask NOTIFY tasksChanged)
+    Q_PROPERTY(QVariantList parentChoices READ parentChoices NOTIFY tasksChanged)
     Q_PROPERTY(bool menuOpen READ menuOpen WRITE setMenuOpen NOTIFY menuOpenChanged)
     Q_PROPERTY(bool showCompleted READ showCompleted WRITE setShowCompleted NOTIFY tasksChanged)
 public:
@@ -46,6 +47,7 @@ public:
     QVariantList activeChips() const;
     QString combinedActiveLabel() const;
     QVariant soleTargetedActiveTask() const;
+    QVariantList parentChoices() const;
     bool menuOpen() const;
     bool showCompleted() const;
 
@@ -66,6 +68,7 @@ public:
     Q_INVOKABLE void requestEdit(const QString &id);
     Q_INVOKABLE void requestCreate(const QString &parentId);
     Q_INVOKABLE void loadInto(QObject *editor, const QString &id);
+    Q_INVOKABLE void save(const QVariantMap &data);
     Q_INVOKABLE void openDrawerOnActive();
     Q_INVOKABLE void updateTaskTitle(const QString &id, const QString &title);
     Q_INVOKABLE void updateTaskTargetMs(const QString &id, qint64 targetMs);
@@ -82,6 +85,7 @@ signals:
 
 private:
     void refreshAllModels();
+    void checkTargets();
 
     struct Impl;
     std::unique_ptr<Impl> d;

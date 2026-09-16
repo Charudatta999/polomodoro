@@ -83,4 +83,10 @@ Drawer {
     }
 
     TaskEditor { id: editor }
+
+    Connections {
+        target: TaskController
+        function onEditRequested(taskId) { editor.openFor(taskId, "") }
+        function onCreateRequested(parentId) { editor.openFor(null, parentId) }
+    }
 }

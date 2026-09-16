@@ -34,11 +34,37 @@ void TaskTreeModel::setProgressBasis(const QString &basis)
     emit dataChanged(index(0, 0), index(rowCount() - 1, 0));
 }
 
+void TaskTreeModel::setShowCompleted(bool enabled)
+{
+    if (m_showCompleted == enabled)
+        return;
+    beginResetModel();
+    m_showCompleted = enabled;
+    rebuild();
+    endResetModel();
+}
+
 void TaskTreeModel::refresh()
 {
     beginResetModel();
     rebuild();
     endResetModel();
+}
+
+// Called every second by TaskController's live timer. Must never do a full
+// reset: that tears down and recreates every delegate, which briefly reads
+// undefined role values while QML re-binds (visible as blank/flickering
+// rows). Bucket membership never changes here, only the time-derived roles.
+void TaskTreeModel::tick()
+{
+    if (m_rows.isEmpty())
+        return;
+    static const QList<int> liveRoles = {
+        LiveElapsedMsRole, TotalElapsedMsRole, ProgressRatioRole, RemainingMsRole,
+        ProgressLabelRole, OverflowRatioRole, OverTargetRole, BadgeTextRole,
+        StartableRole, OverdueRole, TargetReachedRole, HasTargetRole,
+    };
+    emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0), liveRoles);
 }
 
 void TaskTreeModel::rebuild()
@@ -52,13 +78,26 @@ void TaskTreeModel::rebuild()
     else if (m_bucketFilter == QStringLiteral("active"))
         bucket = TaskListBucket::Active;
 
-    const auto tasks = m_activeSubtree ? m_tree.activeSubtree() : m_tree.tasksInBucket(bucket);
-    for (const TaskNode *node : tasks) {
+    if (m_activeSubtree) {
+        for (const TaskNode *node : m_tree.activeSubtree()) {
+            FlatRow row;
+            row.tree = &m_tree;
+            row.nodePtr = node;
+            row.parentId = node->parentId;
+            row.depth = 0;
+            row.hasPrevSibling = false;
+            m_rows.push_back(row);
+        }
+        return;
+    }
+
+    for (const auto &flat : m_tree.flattenBucket(bucket, m_showCompleted)) {
         FlatRow row;
         row.tree = &m_tree;
-        row.nodePtr = node;
-        row.parentId = node->parentId;
-        row.depth = 0;
+        row.nodePtr = flat.node;
+        row.parentId = flat.node->parentId;
+        row.depth = flat.depth;
+        row.hasPrevSibling = flat.hasPrevSibling;
         m_rows.push_back(row);
     }
 }
@@ -167,7 +206,7 @@ QVariant TaskTreeModel::data(const QModelIndex &idx, int role) const
     case HasChildrenRole:
         return !node->children.isEmpty();
     case HasPrevSiblingRole:
-        return false;
+        return m_rows.at(idx.row()).hasPrevSibling;
     case Qt::DisplayRole: return node->title;
     default: return {};
     }

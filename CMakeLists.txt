@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 
 option(POLOMODORO_STATIC_STDCXX "Statically link libgcc/libstdc++" OFF)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Qml Sql QuickControls2 WebEngineQuick QuickEffects)
+find_package(Qt6 REQUIRED COMPONENTS Quick Qml Sql QuickControls2 WebEngineQuick QuickEffects DBus)
 
 qt_add_executable(polomodoro
     include/polomodoro/TaskTreeModel.h
@@ -20,6 +20,7 @@ qt_add_executable(polomodoro
     include/polomodoro/SettingsController.h
     include/polomodoro/SpotifyController.h
     include/polomodoro/BackgroundController.h
+    include/polomodoro/NotificationManager.h
     src/main.cpp
     src/DatabaseManager.cpp
     src/SettingsStore.cpp
@@ -30,6 +31,7 @@ qt_add_executable(polomodoro
     src/WindowLayoutManager.cpp
     src/BackgroundManager.cpp
     src/SpotifyArtBridge.cpp
+    src/NotificationManager.cpp
     src/controllers/TimerController.cpp
     src/controllers/TaskController.cpp
     src/controllers/SettingsController.cpp
@@ -47,6 +49,7 @@ target_link_libraries(polomodoro PRIVATE
     Qt6::QuickControls2
     Qt6::WebEngineQuick
     Qt6::QuickEffects
+    Qt6::DBus
 )
 
 if(POLOMODORO_STATIC_STDCXX)
