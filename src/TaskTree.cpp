@@ -564,6 +564,56 @@ void TaskTree::addSession(const QString &taskId, const QDateTime &startedAt, qin
     q.exec();
 }
 
+QVector<SessionRecord> TaskTree::sessionsBetween(const QDateTime &fromUtc, const QDateTime &toUtc) const
+{
+    QVector<SessionRecord> result;
+    QSqlQuery q(d->db.database());
+    q.prepare(QStringLiteral("SELECT id, task_id, started_at, duration_ms, mode FROM sessions "
+                             "WHERE started_at >= ? AND started_at < ? ORDER BY started_at"));
+    q.addBindValue(fromUtc.toUTC().toString(Qt::ISODateWithMs));
+    q.addBindValue(toUtc.toUTC().toString(Qt::ISODateWithMs));
+    if (!q.exec())
+        return result;
+    while (q.next()) {
+        SessionRecord s;
+        s.id = q.value(0).toLongLong();
+        s.taskId = q.value(1).toString();
+        s.startedAt = QDateTime::fromString(q.value(2).toString(), Qt::ISODateWithMs);
+        s.startedAt.setTimeSpec(Qt::UTC);
+        s.durationMs = q.value(3).toLongLong();
+        s.mode = q.value(4).toString();
+        result.push_back(s);
+    }
+    return result;
+}
+
+bool TaskTree::rescheduleTask(const QString &id, const QDateTime &newStartUtc)
+{
+    TaskNode *node = findById(id);
+    if (!node || !newStartUtc.isValid())
+        return false;
+
+    // Preserve the planned duration so dragging a block moves it rather than
+    // resizing it. A task with only a start keeps having only a start.
+    qint64 plannedMs = -1;
+    if (node->scheduledStartAt.isValid() && node->scheduledEndAt.isValid())
+        plannedMs = node->scheduledStartAt.msecsTo(node->scheduledEndAt);
+
+    node->scheduledStartAt = newStartUtc.toUTC();
+    if (plannedMs >= 0)
+        node->scheduledEndAt = node->scheduledStartAt.addMSecs(plannedMs);
+    node->updatedAt = QDateTime::currentDateTimeUtc();
+    return saveTask(id);
+}
+
+QVector<const TaskNode *> TaskTree::allTasks() const
+{
+    QVector<const TaskNode *> result;
+    for (const auto &root : d->roots)
+        walk(root, [&](const TaskNode &n) { result.push_back(findById(n.id)); });
+    return result;
+}
+
 void TaskTree::reconcileOnStartup()
 {
     const QString lastSaved = d->db.appState(QStringLiteral("last_saved_at"));

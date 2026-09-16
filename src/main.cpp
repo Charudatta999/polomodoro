@@ -1,5 +1,6 @@
 #include <polomodoro/BackgroundController.h>
 #include <polomodoro/BackgroundManager.h>
+#include <polomodoro/DayTimelineModel.h>
 #include <polomodoro/DatabaseManager.h>
 #include <polomodoro/NotificationManager.h>
 #include <polomodoro/SettingsController.h>
@@ -20,6 +21,7 @@
 #include <QDateTime>
 #include <QQmlContext>
 #include <QQmlError>
+#include <QLoggingCategory>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QStandardPaths>
@@ -30,8 +32,24 @@
 #include <QtWebEngineQuick/QQuickWebEngineProfile>
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 
+// This Qt build filters the "qml" logging category to nothing, so console.*
+// and qmlWarning() (including delegate-creation failures, which are otherwise
+// completely silent) never reach the terminal. POLOMODORO_VERBOSE=1 forces the
+// rules open and installs a handler that prints everything.
+static void verboseMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg)
+{
+    static const char *names[] = {"DEBUG", "WARN", "CRIT", "FATAL", "INFO"};
+    fprintf(stderr, "QT[%s] %s (%s:%d)\n", names[type <= 4 ? type : 0], qUtf8Printable(msg),
+            ctx.file ? ctx.file : "-", ctx.line);
+}
+
 int main(int argc, char *argv[])
 {
+    if (qEnvironmentVariableIsSet("POLOMODORO_VERBOSE")) {
+        QLoggingCategory::setFilterRules(QStringLiteral("*=true"));
+        qInstallMessageHandler(verboseMessageHandler);
+    }
+
     QCoreApplication::setOrganizationName(QStringLiteral("Polomodoro"));
     QCoreApplication::setApplicationName(QStringLiteral("polomodoro"));
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
@@ -71,6 +89,15 @@ int main(int argc, char *argv[])
     polomodoro::BackgroundController backgroundController(backgroundManager, settings);
     polomodoro::SpotifyController spotifyController(spotifyBridge);
     polomodoro::WindowLayoutManager windowLayout(settings);
+
+    polomodoro::DayTimelineModel dayTimeline(taskTree);
+    // Any task mutation can add, move or remove a block on the timeline.
+    QObject::connect(&taskController, &polomodoro::TaskController::tasksChanged, &dayTimeline,
+                     &polomodoro::DayTimelineModel::refresh);
+    // Drives the NOW marker; the block list itself only changes on mutation.
+    QTimer nowTicker;
+    QObject::connect(&nowTicker, &QTimer::timeout, &dayTimeline, &polomodoro::DayTimelineModel::tick);
+    nowTicker.start(30000);
 
     polomodoro::ShutdownGuard shutdownGuard(database, taskTree);
     shutdownGuard.startHeartbeat(10000);
@@ -133,6 +160,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("BackgroundController"), &backgroundController);
     ctx->setContextProperty(QStringLiteral("SpotifyController"), &spotifyController);
     ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
+    ctx->setContextProperty(QStringLiteral("DayTimelineModel"), &dayTimeline);
     ctx->setContextProperty(QStringLiteral("timerController"), &timerController);
     ctx->setContextProperty(QStringLiteral("taskController"), &taskController);
     ctx->setContextProperty(QStringLiteral("settingsController"), &settingsController);

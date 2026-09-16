@@ -12,6 +12,7 @@ find_package(Qt6 REQUIRED COMPONENTS Quick Qml Sql QuickControls2 WebEngineQuick
 
 qt_add_executable(polomodoro
     include/polomodoro/TaskTreeModel.h
+    include/polomodoro/DayTimelineModel.h
     include/polomodoro/ShutdownGuard.h
     include/polomodoro/WindowLayoutManager.h
     include/polomodoro/SpotifyArtBridge.h
@@ -27,6 +28,7 @@ qt_add_executable(polomodoro
     src/TimerEngine.cpp
     src/TaskTree.cpp
     src/TaskTreeModel.cpp
+    src/DayTimelineModel.cpp
     src/ShutdownGuard.cpp
     src/WindowLayoutManager.cpp
     src/BackgroundManager.cpp

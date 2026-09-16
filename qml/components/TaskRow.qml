@@ -90,20 +90,24 @@ Rectangle {
             }
         }
 
-        // Hidden at rest to keep a long list quiet; faded in on hover.
+        // Dimmed at rest rather than hidden. Fully hiding these meant a row
+        // showed no controls at all until hovered, and complete/delete were
+        // reachable only through a right-click menu with nothing to hint at it.
         RowLayout {
             spacing: Theme.sm - 2
-            opacity: hover.hovered || root.task.status === "active" ? 1 : 0
+            opacity: hover.hovered || root.task.status === "active" ? 1 : 0.55
             Behavior on opacity { NumberAnimation { duration: Theme.dStandard } }
 
             IconButton {
                 visible: root.task.status === "active"
                 glyph: "pause"
+                tooltip: "Pause"
                 onClicked: TaskController.pauseTask(root.task.id)
             }
             IconButton {
                 visible: root.task.status === "paused"
                 glyph: "play"; filled: true
+                tooltip: "Resume"
                 onClicked: TaskController.resumeTask(root.task.id)
             }
             PillButton {
@@ -115,7 +119,20 @@ Rectangle {
             IconButton {
                 visible: root.task.status === "active" || root.task.status === "paused"
                 glyph: "stop"
+                tooltip: "Stop"
                 onClicked: TaskController.stopTask(root.task.id)
+            }
+            IconButton {
+                visible: root.task.status !== "completed"
+                glyph: "check"
+                tooltip: "Mark complete"
+                onClicked: TaskController.completeTask(root.task.id)
+            }
+            // Same menu as right-click, but discoverable.
+            IconButton {
+                glyph: "more"
+                tooltip: "More actions"
+                onClicked: rowMenu.popup()
             }
         }
     }

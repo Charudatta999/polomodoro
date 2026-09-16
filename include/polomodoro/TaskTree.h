@@ -31,6 +31,15 @@ struct TaskNode {
 
 enum class TaskListBucket { Future, Pending, Active, All };
 
+// One logged work segment, as stored in the sessions table.
+struct SessionRecord {
+    qint64 id = 0;
+    QString taskId;
+    QDateTime startedAt;   // UTC
+    qint64 durationMs = 0;
+    QString mode;
+};
+
 class TaskTree {
 public:
     explicit TaskTree(DatabaseManager &db);
@@ -76,6 +85,14 @@ public:
     double overallProgressRatio(const QString &basis) const;
 
     void addSession(const QString &taskId, const QDateTime &startedAt, qint64 durationMs, const QString &mode);
+    QVector<SessionRecord> sessionsBetween(const QDateTime &fromUtc, const QDateTime &toUtc) const;
+
+    // Moves a task's scheduled window to a new start, preserving its duration.
+    bool rescheduleTask(const QString &id, const QDateTime &newStartUtc);
+
+    // Every task in the tree, depth-first. The timeline needs all of them
+    // regardless of bucket.
+    QVector<const TaskNode *> allTasks() const;
     void reconcileOnStartup();
     void promoteFutureTasks();
 

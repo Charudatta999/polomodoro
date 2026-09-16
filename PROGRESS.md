@@ -185,6 +185,44 @@ looked like.
   accents today and dims adjacent-month days, and `onAboutToShow` now opens on
   the month of the current value rather than today's.
 
+### Session 5 (2026-09-16, task actions + real day timeline)
+
+- **Task actions were wired but invisible.** Reported as "cannot mark complete /
+  discard / pause". Harness testing (stub `TaskController`, real `TaskRow`)
+  confirmed the row was enabled, the context menu opened, and "Mark complete"
+  reached the controller — nothing was broken. The problem was affordance: the
+  action row was `opacity: 0` until hover, and complete/delete existed *only*
+  behind an unhinted right-click menu. Actions are now dimmed-but-visible at
+  rest, with an explicit check (complete) and ⋯ (menu) button and tooltips
+  throughout. New `more.svg` / `check.svg` icons.
+- **DayTimeline is now real.** Replaced the hardcoded mock with
+  `DayTimelineModel` (`QAbstractListModel`): "planned" blocks from a task's
+  scheduled window and "logged" blocks from the sessions table, for one local
+  day. Day strip cells select a day, prev/next arrows step, a "Today" button
+  appears when off today, and the NOW marker only shows on today. Planned
+  blocks drag vertically to reschedule (5-minute snap, duration preserved);
+  logged history refuses to move. Backed by new `TaskTree::sessionsBetween()`,
+  `rescheduleTask()` and `allTasks()`. Verified end to end: prev/next
+  navigation, a drag snapping 1022→1020 minutes, the DB write-back
+  (10:00→11:30 UTC with the 1h window preserved), and logged rows rejecting
+  `moveBlock`.
+- **Overlap lanes.** A planned block and the session logged against it occupy
+  the same time and covered each other. `assignLanes()` clusters overlapping
+  blocks and splits the width into columns; non-overlapping blocks keep the
+  full width.
+- **Two gotchas worth remembering.** First: the initial hour range used
+  09:00–15:00 as a *floor* rather than a fallback, which pinned the view to
+  09:00 and pushed an evening's blocks below the scroll fold — they rendered
+  correctly the whole time, just off-screen. Second: `QAbstractListModel`
+  exposes no `count` to QML, so the empty-state check was silently `undefined`;
+  added an explicit `count` property.
+- **Real logging channel at last.** `POLOMODORO_VERBOSE=1` now calls
+  `QLoggingCategory::setFilterRules("*=true")` *and* installs a
+  `qInstallMessageHandler`. This is the only way to see `console.*` and
+  `qmlWarning()` on this build — including delegate-creation failures, which
+  are otherwise completely silent and cost real time this session. Prefer it
+  over the `Qt.exit(code)` trick from session 4.
+
 ## Known gaps / next session
 
 1. **expanded→bar does not shrink the window width.** Going expanded→bar leaves

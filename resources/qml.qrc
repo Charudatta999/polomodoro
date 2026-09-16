@@ -21,6 +21,8 @@
         <file alias="settings.svg">icons/settings.svg</file>
         <file alias="reset.svg">icons/reset.svg</file>
         <file alias="tasks.svg">icons/tasks.svg</file>
+        <file alias="more.svg">icons/more.svg</file>
+        <file alias="check.svg">icons/check.svg</file>
     </qresource>
     <qresource prefix="/qml">
         <file alias="main.qml">../qml/main.qml</file>
