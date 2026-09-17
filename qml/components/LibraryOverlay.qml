@@ -11,8 +11,10 @@ Drawer {
     edge: Qt.RightEdge
     width: SettingsController.libraryOverlayWidth
     interactive: true
-    dim: true
-    Overlay.modal: Rectangle { color: Qt.rgba(0.024, 0.027, 0.035, 0.5) }
+    // Overlay.modal + a transparent ApplicationWindow makes Qt/Hyprland
+    // composite the whole surface as alpha. The dim stays "on" after close.
+    modal: false
+    dim: false
 
     enter: Transition { NumberAnimation { property: "position"; to: 1; duration: Theme.dEnter; easing.type: Easing.OutQuint } }
     exit:  Transition { NumberAnimation { property: "position"; to: 0; duration: Theme.dEnter; easing.type: Easing.OutQuint } }
@@ -74,7 +76,10 @@ Drawer {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 7
-                Text { text: "NOW PLAYING"; font.family: Theme.monoFamily; font.pixelSize: 11; font.letterSpacing: 1.8; color: Theme.accent }
+                Text {
+                    text: MprisController.isSpotifyPlayer ? "NOW PLAYING" : "NOW PLAYING · LOCAL"
+                    font.family: Theme.monoFamily; font.pixelSize: 11; font.letterSpacing: 1.8; color: Theme.accent
+                }
                 Text {
                     Layout.fillWidth: true
                     text: MprisController.title
@@ -150,7 +155,7 @@ Drawer {
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.fontFamily; font.pixelSize: 14; font.weight: Font.Medium
                     color: Theme.textPrimary
-                    text: SpotifyWebApi.offline ? "Offline" : "Connect your Spotify account"
+                    text: SpotifyWebApi.offline ? "Offline" : "Sign in for playlists"
                 }
                 Text {
                     Layout.fillWidth: true
@@ -159,14 +164,19 @@ Drawer {
                     font.family: Theme.fontFamily; font.pixelSize: 11; color: Theme.textDim
                     text: SpotifyWebApi.offline
                           ? "Playback controls still work — only the library needs a connection."
-                          : "Playlists, search and device switching need an account. Playback controls work without one."
+                          : "spotifyd login plays on this machine. Playlists and search need the playlist account in Settings → Music."
                 }
                 PillButton {
                     Layout.alignment: Qt.AlignHCenter
                     visible: !SpotifyWebApi.offline
-                    label: "Sign in"
-                    primary: true
-                    onClicked: SpotifyWebApi.beginPkce()
+                    label: SettingsController.spotifyClientId.length > 0 ? "Sign in" : "Add a Client ID in Settings"
+                    primary: SettingsController.spotifyClientId.length > 0
+                    onClicked: {
+                        if (SettingsController.spotifyClientId.length > 0)
+                            SpotifyWebApi.beginPkce()
+                        else
+                            root.close()
+                    }
                 }
             }
         }

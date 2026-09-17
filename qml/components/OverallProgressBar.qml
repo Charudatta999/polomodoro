@@ -21,7 +21,7 @@ Item {
             Layout.fillWidth: true
             height: 8
             radius: 4
-            color: hover.hovered ? "#22262E" : Theme.surfaceRaised
+            color: hover.hovered ? Theme.line : Theme.surfaceRaised
             Behavior on color { ColorAnimation { duration: Theme.dStandard } }
 
             Rectangle {

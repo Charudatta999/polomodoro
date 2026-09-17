@@ -25,6 +25,8 @@
         <file alias="reset.svg">icons/reset.svg</file>
         <file alias="tasks.svg">icons/tasks.svg</file>
         <file alias="device.svg">icons/device.svg</file>
+        <file alias="wallpaper.svg">icons/wallpaper.svg</file>
+        <file alias="art.svg">icons/art.svg</file>
     </qresource>
     <qresource prefix="/qml">
         <file alias="main.qml">../qml/main.qml</file>
@@ -51,6 +53,8 @@
         <file alias="components/DevicePopover.qml">../qml/components/DevicePopover.qml</file>
         <file alias="components/OverallProgressBar.qml">../qml/components/OverallProgressBar.qml</file>
         <file alias="components/SubtaskProgressDropdown.qml">../qml/components/SubtaskProgressDropdown.qml</file>
+        <file alias="components/WindowResizeFrame.qml">../qml/components/WindowResizeFrame.qml</file>
+        <file alias="components/WindowDragFrame.qml">../qml/components/WindowDragFrame.qml</file>
         <file alias="components/WindowChrome.qml">../qml/components/WindowChrome.qml</file>
         <file alias="components/NowPlayingLabel.qml">../qml/components/NowPlayingLabel.qml</file>
         <file alias="components/ProgressTrough.qml">../qml/components/ProgressTrough.qml</file>

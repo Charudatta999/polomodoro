@@ -30,7 +30,9 @@ Rectangle {
     function syncBarHeight() {
         if (!isActive || !Window.window)
             return
-        Window.window.height = dropdownOpen ? openHeight : barHeight
+        const h = dropdownOpen ? openHeight : barHeight
+        Window.window.maximumHeight = h
+        Window.window.height = h
     }
 
     onDropdownOpenChanged: {
@@ -52,11 +54,19 @@ Rectangle {
         acceptedButtons: Qt.LeftButton
         // On first motion rather than on press, so a plain click still lands
         // (PiP double-click expands) while the serial is still current.
-        onPositionChanged: if (pressed && Window.window) Window.window.startSystemMove()
+        onPressed: {
+            if (Window.window && Window.window.resetSystemMove)
+                Window.window.resetSystemMove()
+            if (Window.window)
+                Window.window.startSystemMove()
+        }
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.dropdownOpen ? root.openHeight : root.barHeight
         spacing: 0
 
         RowLayout {

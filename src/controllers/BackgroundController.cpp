@@ -3,7 +3,12 @@
 #include "polomodoro/BackgroundManager.h"
 #include "polomodoro/SettingsStore.h"
 
+#include <QLoggingCategory>
+#include <QUrl>
+
 namespace polomodoro {
+
+Q_LOGGING_CATEGORY(lcBgCtl, "polomodoro.background")
 
 struct BackgroundController::Impl {
     BackgroundManager &manager;
@@ -23,6 +28,26 @@ QString BackgroundController::previousImageUrl() const { return d->manager.previ
 QString BackgroundController::source() const { return backgroundSource(); }
 QString BackgroundController::backgroundSource() const { return d->manager.backgroundSource(); }
 QString BackgroundController::phaseTint() const { return d->phaseTint; }
+bool BackgroundController::firstRunAsked() const
+{
+    return d->settings.getBool(QStringLiteral("backgroundFirstRunAsked"));
+}
+
+void BackgroundController::setUserFolder(const QUrl &folder)
+{
+    qCInfo(lcBgCtl) << "setUserFolder" << folder;
+    d->manager.setUserWallpaperFolder(folder.toLocalFile());
+    d->settings.setBool(QStringLiteral("backgroundFirstRunAsked"), true);
+    qCInfo(lcBgCtl) << "showing" << currentImageUrl();
+    emit backgroundChanged();
+}
+
+void BackgroundController::markFirstRunAsked()
+{
+    qCInfo(lcBgCtl) << "first-run wallpaper dialog dismissed; asked=" << true;
+    d->settings.setBool(QStringLiteral("backgroundFirstRunAsked"), true);
+    emit backgroundChanged();
+}
 
 void BackgroundController::setSource(const QString &source)
 {
@@ -31,8 +56,10 @@ void BackgroundController::setSource(const QString &source)
 
 void BackgroundController::setBackgroundSource(const QString &source)
 {
+    qCInfo(lcBgCtl) << "source" << backgroundSource() << "→" << source;
     d->manager.setBackgroundSource(source);
     d->settings.setString(QStringLiteral("backgroundSource"), source);
+    qCInfo(lcBgCtl) << "showing" << currentImageUrl();
     emit backgroundChanged();
 }
 
@@ -55,8 +82,10 @@ void BackgroundController::cycleBackgroundSource()
 
 void BackgroundController::tick()
 {
-    d->manager.tick();
-    emit backgroundChanged();
+    if (d->manager.tick()) {
+        qCInfo(lcBgCtl) << "tick rotated to" << currentImageUrl();
+        emit backgroundChanged();
+    }
 }
 
 } // namespace polomodoro

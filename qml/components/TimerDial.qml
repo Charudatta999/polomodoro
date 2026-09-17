@@ -17,6 +17,7 @@ Item {
     Shape {
         anchors.fill: parent
         antialiasing: true
+        preferredRendererType: Shape.CurveRenderer
         layer.enabled: true
         layer.samples: 4
 

@@ -28,6 +28,12 @@ Item {
         cache: false
         source: root.imageUrl
         opacity: crossfade.frontIsA ? 1 : 0
+        onStatusChanged: {
+            if (status === Image.Error)
+                console.warn("polomodoro.background: imgA error", source, errorString)
+            else if (status === Image.Ready)
+                console.info("polomodoro.background: imgA ready", source, implicitWidth, "x", implicitHeight)
+        }
         Behavior on opacity { NumberAnimation { duration: Theme.dCrossfade; easing.type: Easing.InOutQuad } }
     }
 
@@ -38,6 +44,12 @@ Item {
         asynchronous: true
         cache: false
         opacity: crossfade.frontIsA ? 0 : 1
+        onStatusChanged: {
+            if (status === Image.Error)
+                console.warn("polomodoro.background: imgB error", source, errorString)
+            else if (status === Image.Ready)
+                console.info("polomodoro.background: imgB ready", source, implicitWidth, "x", implicitHeight)
+        }
         Behavior on opacity { NumberAnimation { duration: Theme.dCrossfade; easing.type: Easing.InOutQuad } }
     }
 
@@ -64,12 +76,26 @@ Item {
         }
     }
 
+    readonly property QtObject frontImage: crossfade.frontIsA ? imgA : imgB
+    readonly property bool imageReady: frontImage.status === Image.Ready
+
     MultiEffect {
         anchors.fill: parent
-        source: crossfade.frontIsA ? imgA : imgB
+        visible: root.imageReady
+        source: root.frontImage
         blurEnabled: true
         blur: 1.0
         blurMax: Theme.blurRadius
+    }
+
+    // Last resort when no image has loaded — never the default (R3).
+    Rectangle {
+        anchors.fill: parent
+        visible: !root.imageReady
+        gradient: Gradient {
+            GradientStop { position: 0; color: Theme.bgBase }
+            GradientStop { position: 1; color: Theme.surface }
+        }
     }
 
     Rectangle {

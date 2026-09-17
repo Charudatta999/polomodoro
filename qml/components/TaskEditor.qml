@@ -8,6 +8,7 @@ Popup {
     id: root
     modal: true
     closePolicy: Popup.CloseOnEscape
+    dim: false
     width: 392
     padding: Theme.lg + 2
     anchors.centerIn: Overlay.overlay
@@ -103,7 +104,7 @@ Popup {
             text: root.validationError
             wrapMode: Text.WordWrap
             font.family: Theme.fontFamily; font.pixelSize: 11
-            color: "#E8489B"
+            color: Theme.destructive
         }
 
         RowLayout {

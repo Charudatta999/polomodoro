@@ -26,7 +26,8 @@ Rectangle {
         acceptedButtons: Qt.LeftButton
         // On first motion rather than on press, so a plain click still lands
         // (PiP double-click expands) while the serial is still current.
-        onPositionChanged: if (pressed && Window.window) Window.window.startSystemMove()
+        onPressed: if (Window.window && Window.window.resetSystemMove) Window.window.resetSystemMove()
+        onPositionChanged: if (pressed && Window.window && Window.window.beginSystemMove) Window.window.beginSystemMove()
         onDoubleClicked: WindowLayoutManager.setMode(0)
     }
 

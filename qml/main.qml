@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Effects
 import Polomodoro
 import "windows"
 import "components"
@@ -7,7 +9,7 @@ import "components"
 ApplicationWindow {
     id: app
     visible: true
-    color: Theme.bgBase
+    color: "transparent"
 
     readonly property int viewMode: WindowLayoutManager.viewMode
 
@@ -27,6 +29,24 @@ ApplicationWindow {
         { w: 560, h: 40  },   // 1 bar
         { w: 260, h: 120 }    // 2 compact / PiP
     ]
+    readonly property int _sizeMax: 16777215
+    property bool _moveArmed: false
+    property bool _geometryTouched: false
+
+    // Wayland startSystemMove must use the current pointer serial, but calling
+    // it on every motion (a 48px bar is all "edge") makes Hyprland retile the
+    // surface to a full slot. One call per press is enough.
+    function beginSystemMove() {
+        if (_moveArmed)
+            return
+        _moveArmed = true
+        startSystemMove()
+    }
+    function resetSystemMove() { _moveArmed = false }
+
+    function barHeightCap() {
+        return SettingsController.barDropdownExpanded ? 240 : 48
+    }
 
     minimumWidth: 640
     minimumHeight: 420
@@ -47,16 +67,26 @@ ApplicationWindow {
 
     function _applyWindowGeometryNow() {
         _applyingGeometry = true
-        // Minimum first: Qt clamps an incoming size against whatever floor is
-        // currently in force, so the outgoing mode's minimum has to be relaxed
-        // before the new size is written.
-        var min = _minSizeForMode[WindowLayoutManager.viewMode] || _minSizeForMode[0]
+        _geometryTouched = false
+        const mode = WindowLayoutManager.viewMode
+        var min = _minSizeForMode[mode] || _minSizeForMode[0]
+        // Lift caps before growing out of bar/PiP; Qt clamps height against
+        // maximumHeight the same way it clamps against minimumHeight.
+        maximumWidth = _sizeMax
+        maximumHeight = _sizeMax
         minimumWidth = min.w
         minimumHeight = min.h
         x = WindowLayoutManager.x
         y = WindowLayoutManager.y
         width = WindowLayoutManager.width
         height = WindowLayoutManager.height
+        if (mode === 1) {
+            maximumHeight = barHeightCap()
+            height = Math.min(height, maximumHeight)
+        } else if (mode === 2) {
+            maximumWidth = 500
+            maximumHeight = 400
+        }
         geometrySettleTimer.restart()
     }
 
@@ -66,6 +96,10 @@ ApplicationWindow {
         id: geometrySettleTimer
         interval: 250
         onTriggered: {
+            if (app._geometryTouched) {
+                app._applyingGeometry = false
+                return
+            }
             app.x = WindowLayoutManager.x
             app.y = WindowLayoutManager.y
             app.width = WindowLayoutManager.width
@@ -74,7 +108,32 @@ ApplicationWindow {
         }
     }
 
-    Component.onCompleted: applyWindowGeometry()
+    Component.onCompleted: {
+        applyWindowGeometry()
+        if (!BackgroundController.firstRunAsked)
+            wallpaperFolder.open()
+    }
+
+    FolderDialog {
+        id: wallpaperFolder
+        title: "Choose a wallpaper folder"
+        onAccepted: {
+            BackgroundController.setUserFolder(selectedFolder)
+            BackgroundController.markFirstRunAsked()
+        }
+        onRejected: BackgroundController.markFirstRunAsked()
+    }
+
+    Connections {
+        target: PaletteDeriver
+        function onPaletteChanged() {
+            Theme.accent = PaletteDeriver.accent
+            Theme.accentHover = PaletteDeriver.accentHover
+            Theme.breakColor = PaletteDeriver.breakColor
+            Theme.overflow = PaletteDeriver.overflow
+            Theme.muted = PaletteDeriver.muted
+        }
+    }
 
     Connections {
         target: WindowLayoutManager
@@ -82,27 +141,168 @@ ApplicationWindow {
         function onGeometryChanged() { app.applyWindowGeometry() }
     }
 
-    onXChanged: if (!_applyingGeometry) WindowLayoutManager.rememberGeometry(x, y, width, height)
-    onYChanged: if (!_applyingGeometry) WindowLayoutManager.rememberGeometry(x, y, width, height)
-    onWidthChanged: if (!_applyingGeometry) WindowLayoutManager.rememberGeometry(x, y, width, height)
-    onHeightChanged: if (!_applyingGeometry) WindowLayoutManager.rememberGeometry(x, y, width, height)
-
-    BackgroundView {
-        anchors.fill: parent
-        visible: app.viewMode === 0
+    onXChanged: persistGeometry()
+    onYChanged: persistGeometry()
+    onWidthChanged: persistGeometry()
+    onHeightChanged: {
+        if (!_applyingGeometry && viewMode === 1 && height > barHeightCap() + 4) {
+            height = barHeightCap()
+            return
+        }
+        persistGeometry()
     }
 
-    StackLayoutLike {
-        id: stack
-        anchors.fill: parent
-        current: app.viewMode
-        MainWindow { id: mainWindow }
-        ProgressBarView {}
-        CompactView {}
+    function persistGeometry() {
+        if (_applyingGeometry)
+            return
+        _geometryTouched = true
+        geometrySettleTimer.stop()
+        WindowLayoutManager.rememberGeometry(x, y, width, height)
     }
 
-    TaskMenuDrawer { id: taskDrawer }
+    Item {
+        id: shell
+        anchors.fill: parent
+
+        readonly property bool wallpaperOn: app.viewMode === 0
+        readonly property bool placementMiddle: wallpaperOn && SettingsController.backgroundPlacement === "middle"
+        readonly property bool placementFrame: wallpaperOn && SettingsController.backgroundPlacement === "frame"
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.rWindow
+            color: Theme.bgBase
+        }
+
+        Item {
+            id: bgSource
+            anchors.fill: parent
+            anchors.margins: 0
+            visible: false
+            layer.enabled: true
+            layer.smooth: true
+            BackgroundView {
+                anchors.fill: parent
+                visible: shell.wallpaperOn
+            }
+            Rectangle {
+                anchors.fill: parent
+                visible: !shell.wallpaperOn
+                color: Theme.bgBase
+            }
+        }
+
+        Rectangle {
+            id: roundMask
+            anchors.fill: bgSource
+            radius: Theme.rWindow
+            color: "#ffffff"
+            visible: false
+            layer.enabled: true
+            layer.smooth: true
+        }
+
+        MultiEffect {
+            anchors.fill: bgSource
+            source: bgSource
+            maskEnabled: true
+            maskSource: roundMask
+            maskThresholdMin: 0.5
+        }
+
+        Item {
+            id: frameBlurMask
+            anchors.fill: parent
+            visible: false
+            layer.enabled: true
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.rWindow
+                color: "#ffffff"
+            }
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: Theme.windowGrip
+                radius: Theme.rPanel
+                color: "#000000"
+            }
+        }
+
+        MultiEffect {
+            visible: shell.placementMiddle
+            anchors.fill: parent
+            source: bgSource
+            blurEnabled: true
+            blur: 1.0
+            blurMax: 80
+            maskEnabled: true
+            maskSource: frameBlurMask
+            maskThresholdMin: 0.5
+        }
+
+        Rectangle {
+            visible: shell.placementFrame
+            anchors.fill: parent
+            anchors.margins: Theme.windowGrip
+            radius: Theme.rPanel
+            color: Qt.rgba(0.078, 0.086, 0.106, 0.55)
+        }
+
+        StackLayoutLike {
+            id: stack
+            anchors.fill: parent
+            anchors.margins: app.viewMode === 0 ? Theme.windowGrip : 0
+            current: app.viewMode
+            MainWindow { id: mainWindow }
+            ProgressBarView {}
+            CompactView {}
+        }
+    }
+
+    WindowDragFrame {
+        z: 999
+    }
+
+    WindowResizeFrame {
+        z: 1000
+    }
+
+    Rectangle {
+        id: drawerScrim
+        anchors.fill: parent
+        z: 1100
+        visible: taskDrawer.opened || library.opened
+        color: Qt.rgba(0.024, 0.027, 0.035, 0.55)
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                if (library.opened)
+                    library.close()
+                if (taskDrawer.opened)
+                    taskDrawer.close()
+            }
+        }
+    }
+
+    TaskMenuDrawer {
+        id: taskDrawer
+        parent: app.contentItem
+        z: 1200
+    }
+    LibraryOverlay {
+        id: library
+        parent: app.contentItem
+        z: 1200
+        height: parent.height
+    }
     SettingsView { id: settings; objectName: "settingsView" }
+
+    function toggleMusic() {
+        if (library.opened)
+            library.close()
+        else
+            library.open()
+    }
 
     function toggleTaskDrawer() {
         if (taskDrawer.opened) {

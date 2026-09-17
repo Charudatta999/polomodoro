@@ -15,7 +15,7 @@ Rectangle {
     radius: Theme.rRow
     color: hover.hovered ? Theme.surfaceRaised : Theme.surface
     border.width: 1
-    border.color: task.overdue ? "#E8489B" : (selected ? Theme.accent : Theme.line)
+    border.color: task.overdue ? Theme.destructive : (selected ? Theme.accent : Theme.line)
     property bool selected: false
     opacity: task.status === "completed" ? 0.55 : (task.startable ? 1.0 : 0.45)
     enabled: task.startable || task.status === "active" || task.status === "paused"
@@ -86,7 +86,7 @@ Rectangle {
                 text: root.task.badgeText
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fEyebrow
-                color: root.task.overdue ? "#E8489B"
+                color: root.task.overdue ? Theme.destructive
                      : root.task.overTarget ? Theme.overflow : Theme.textFaint
             }
         }

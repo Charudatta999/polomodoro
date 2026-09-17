@@ -18,8 +18,11 @@ public:
     QString backgroundSource() const;
 
     void setBackgroundSource(const QString &source);
-    void setSpotifyArtUrl(const QString &url);
-    void tick();
+    // Returns true when the art URL actually changed.
+    bool setSpotifyArtUrl(const QString &url);
+    void setUserWallpaperFolder(const QString &path);
+    // Returns true when the wallpaper URL actually changed.
+    bool tick();
 
 private:
     struct Impl;
