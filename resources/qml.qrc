@@ -4,6 +4,9 @@
     </qresource>
     <qresource prefix="/wallpapers">
         <file alias="default.png">wallpapers/default.png</file>
+        <file alias="grad1.png">wallpapers/grad1.png</file>
+        <file alias="grad2.png">wallpapers/grad2.png</file>
+        <file alias="grad3.png">wallpapers/grad3.png</file>
     </qresource>
     <qresource prefix="/fonts">
         <file alias="Geist-Regular.ttf">fonts/Geist-Regular.ttf</file>

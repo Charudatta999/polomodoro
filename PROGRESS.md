@@ -446,38 +446,119 @@ WebEngine entirely.**
   needs `sudo`, which can't run interactively here — left for the user; see
   the updated README's Dependencies section.
 
+### Session 11 (2026-09-17, rulebook parity pass, logind flush, gap cleanup)
+
+- **`spotifyd` and `qtkeychain-qt6` are now properly installed** via
+  `sudo pacman -S` (user ran it) — confirmed with `pacman -Qi` (spotifyd
+  0.4.2-1.1 from cachyos-extra-v3, qtkeychain-qt6 0.17.0-1 from extra).
+  Reconfigured and rebuilt: CMake now reports "qtkeychain found — Spotify
+  refresh token will persist across restarts" and links
+  `Qt6Keychain::Qt6Keychain`, so `POLOMODORO_HAVE_KEYCHAIN` is live — the
+  refresh token now actually goes to the system keyring, not memory-only.
+  Note: an `external-binaries/spotifyd-linux-x86_64-full/` binary the user
+  separately downloaded from spotifyd's GitHub releases was never executed —
+  the permission layer classifies any "spotifyd" execution attempt as
+  provenance-sensitive regardless of which copy (even the pacman one) is
+  named in the command, so verifying it live (D-Bus service registration,
+  playing a real track) is still up to the user to run themselves.
+- **Logind shutdown flush added** (`ShutdownGuard`): connects to
+  `org.freedesktop.login1.Manager`'s `PrepareForShutdown` signal on the
+  system bus and runs the same begin/save/heartbeat/commit/checkpoint flush
+  as `aboutToQuit`, since a system suspend/shutdown/reboot kills the process
+  before `aboutToQuit` reliably fires on many desktops. Closes gap #2.
+- **Global dark Fusion palette added** in `main.cpp` (`QGuiApplication::setPalette`)
+  using the literal `bgBase`/`surface`/`surfaceRaised`/`line`/`textPrimary`/
+  `textDim` values from rulebook §1 (not re-derived — same table `Theme.qml`
+  mirrors). Fixes `DateTimeField`'s and `TargetTimeEditor`'s unstyled
+  `SpinBox`es, which rendered in light Fusion colors against dark popups —
+  a single app-wide fix rather than restyling each `SpinBox` instance
+  individually across three files. Verified via screenshot: Settings → Timer
+  tab's three `SpinBox`es (work/short break/long break) now render dark.
+  Closes gap #6.
+- **Bundled wallpaper rotation** — `resources/wallpapers/` had exactly one
+  image (`default.png`), so with no user wallpaper folder configured
+  `BackgroundManager` just sat on one static image forever, and R2/R3's
+  "background must load and change" gates were only ever exercised by the
+  single default. Generated three additional abstract dark gradients
+  (`grad1.png`/`grad2.png`/`grad3.png`, ImageMagick, colors drawn from the
+  same literal `Theme` palette table — not invented hexes) and wired
+  `BackgroundManager`'s constructor to seed `wallpaperPaths` with all four
+  bundled images when no user folder is set, so rotation (`tick()`,
+  `backgroundRotationSec`) now actually has something to rotate through
+  out of the box. Fixed `tick()`'s `QUrl::fromLocalFile()` call, which would
+  have mangled the `qrc:` bundled paths, to pass them through unchanged.
+  Closes gap #3.
+- **`MprisController` multi-player heuristic verified live**, not just by
+  inspection: wrote two dummy MPRIS services in Python (`dbus-python`,
+  minimal `org.mpris.MediaPlayer2.Player` + `Properties.Get`/`GetAll`) in
+  the scratchpad's `mpris_test/` harness. Confirmed the documented behavior
+  empirically: a non-spotify-named player (`dummyplayerA`) attaches first
+  (`title=Track A`), then when a player named `org.mpris.MediaPlayer2.spotifyd`
+  appears, `MprisController` switches to it (`title=Spotify Track B`) without
+  restarting the app. The reverse case (a plain player appearing while a
+  spotify-named one is already attached does *not* displace it) was not
+  re-run live after a background-daemon lifecycle issue in this sandbox
+  (Python test players kept getting torn down across tool-call boundaries
+  before the harness could observe them) — but is unambiguous from
+  `onNameOwnerChanged`'s condition (`src/MprisController.cpp`): it only
+  attaches on `appearing` when `d->serviceName.isEmpty() || name.contains("spotify")`,
+  so a plain name arriving while a spotify service is already attached
+  satisfies neither branch. Closes gap #8.
+- **Checked gap #1** (stale window geometry): read the real profile's
+  `expandedGeometry`/`barGeometry`/`compactGeometry` directly —
+  `0,0,2560,1408` / `0,0,1920,48` / `0,0,300,140` — all sane, not degraded.
+  No cleanup needed; left the real database untouched.
+- **Re-ran the full rulebook §0 screenshot gate** after all of the above:
+  fresh-profile expanded/bar/PiP and the real user profile, zero QML
+  warnings in every case. Timer ring, background image, frost, chrome pill
+  order, task drawer overlay, and the now-playing strip's specific
+  "No player running / Start spotifyd, or play from any Spotify app" empty
+  state (rulebook §5: "empty state names its own rule") all still hold —
+  no regressions from this session's changes.
+- **Not done this session** (needs the user, still): the actual PKCE OAuth
+  round-trip (needs a registered Spotify Developer client id), and a live
+  smoke-test of `spotifyd` itself producing an MPRIS service that
+  `NowPlayingStrip` picks up — blocked on the permission layer's blanket
+  provenance rule for anything invoking `spotifyd`, pacman-installed or not.
+  Gap #4 (`loggedWorkMs` toggle) and gap #5 (real Wayland pointer input) were
+  re-checked: #4 turned out to already be fully wired (`SettingsView.qml`'s
+  "Progress counts" `PoloSegmented` in the Tasks tab) — the gap list itself
+  was stale, not the code; #5 still needs a real desktop session.
+
 ## Known gaps / next session
 
-1. **The real profile may still hold old degraded geometry** from before the
-   session 4 ratchet fix. `expandedGeometry`/`barGeometry`/`compactGeometry`
-   are legal-but-stale sizes, so validation won't reset them on its own. To
-   force the shipped defaults back:
-   ```bash
-   sqlite3 ~/.config/polomodoro/polomodoro.db \
-     "delete from settings where key like '%Geometry%';"
-   ```
-2. Add logind D-Bus `PrepareForShutdown` flush (QtDBus already linked for
-   notifications, so this is easier to add now)
-3. Bundled default wallpaper images in `resources/backgrounds/` (only one
-   default wallpaper exists)
-4. `loggedWorkMs` progress basis UI in settings (basis is stored/read but no
-   settings toggle exposed yet)
+1. ~~The real profile may still hold old degraded geometry~~ — checked
+   directly in session 11: `expandedGeometry`/`barGeometry`/`compactGeometry`
+   are `0,0,2560,1408` / `0,0,1920,48` / `0,0,300,140`, all sane. No action
+   needed. (If it ever does regress, the reset command is still valid:
+   `sqlite3 ~/.config/polomodoro/polomodoro.db "delete from settings where key like '%Geometry%';"`)
+2. ~~Add logind D-Bus `PrepareForShutdown` flush~~ — done in session 11
+   (`ShutdownGuard::onPrepareForShutdown`).
+3. ~~Bundled default wallpaper images~~ — done in session 11: three more
+   gradients added to `resources/wallpapers/`, `BackgroundManager` rotates
+   through all four when no user folder is set.
+4. ~~`loggedWorkMs` progress basis UI in settings~~ — already existed
+   (`SettingsView.qml`'s Tasks tab "Progress counts" toggle); the gap entry
+   was stale.
 5. Test on real Hyprland/Wayland (and especially the new drag-to-move) with a
    real pointer, and confirm Spotify login end to end — both untestable
-   headlessly on this machine.
-6. The `DateTimeField` SpinBoxes still render in light Fusion colors against the
-   dark popup — cosmetic, unstyled.
-7. Install `spotifyd` and `qtkeychain-qt6` (`sudo pacman -S spotifyd
-   qtkeychain-qt6`), register a Spotify Developer app for the PKCE client id,
-   and smoke-test the real sign-in flow end to end — none of this could be
-   done from this session (no interactive sudo, no ability to register an
-   OAuth app). `external-binaries/spotifyd-linux-x86_64-full/` has a
-   prebuilt `spotifyd` binary of unconfirmed provenance; safer to install the
-   pacman package than run it as-is.
-8. `MprisController`'s player-selection heuristic (prefer a service name
-   containing "spotify", else whichever appeared first) is untested against
-   more than one simultaneous MPRIS player — reasonable in the common case,
-   but worth a look if multiple media apps are ever open together.
+   headlessly on this machine. Still open.
+6. ~~The `DateTimeField` SpinBoxes render in light Fusion colors~~ — done in
+   session 11: a global dark `QPalette` in `main.cpp` fixes every unstyled
+   Fusion control app-wide, not just this one.
+7. `spotifyd` and `qtkeychain-qt6` are now installed via pacman (confirmed
+   `pacman -Qi`), and the build links `qtkeychain` so refresh tokens persist.
+   Still open: registering a Spotify Developer app for the PKCE client id and
+   running the real sign-in flow, and actually starting `spotifyd` and
+   confirming `NowPlayingStrip` picks it up — both need the user, since
+   starting `spotifyd` (any copy, pacman-installed or not) is blocked for
+   this agent by a blanket provenance rule in the permission layer.
+8. ~~`MprisController`'s player-selection heuristic is untested~~ — done in
+   session 11: verified live with two dummy MPRIS services over D-Bus
+   (`dbus-python`) that a spotify-named player appearing later correctly
+   takes over from a plain one already attached; the reverse (staying
+   attached to spotify when a plain player later appears) is unambiguous by
+   inspection of `onNameOwnerChanged`'s condition.
 
 ## Resume instructions
 
@@ -487,6 +568,8 @@ cmake --build build
 ./build/polomodoro
 ```
 
-Continue from "Known gaps" above — start with a real-desktop pass on dragging
-bar/PiP by their background and confirming no titlebar reappears, since that
-is the one thing session 9 could not verify without pointer injection.
+Only real remaining gap is #5 and the user-side half of #7 — both need a
+real desktop session (Wayland pointer input; starting `spotifyd` and
+completing Spotify's OAuth login) that this agent cannot do headlessly or
+past its own permission layer. Otherwise the rulebook parity pass in session
+11 found no other outstanding items.

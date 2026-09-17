@@ -16,7 +16,9 @@
 
 #include <QDir>
 #include <QFontDatabase>
+#include <QColor>
 #include <QGuiApplication>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QDateTime>
 #include <QQmlContext>
@@ -54,6 +56,38 @@ int main(int argc, char *argv[])
 
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
+
+    // Fusion's default palette is light; unstyled controls (SpinBox, ComboBox
+    // popups) render light-on-dark without this. Values are the literal
+    // bgBase/surface/surfaceRaised/line/textPrimary/textDim/textFaint table
+    // from the rulebook, not re-derived — Theme.qml is the QML-side mirror of
+    // the same table.
+    {
+        QPalette p = app.palette();
+        const QColor bgBase(0x0C, 0x0D, 0x10);
+        const QColor surface(0x14, 0x16, 0x1B);
+        const QColor surfaceRaised(0x1B, 0x1E, 0x25);
+        const QColor line(0x27, 0x2B, 0x34);
+        const QColor textPrimary(0xED, 0xEF, 0xF3);
+        const QColor textDim(0x9A, 0xA1, 0xAE);
+        p.setColor(QPalette::Window, bgBase);
+        p.setColor(QPalette::WindowText, textPrimary);
+        p.setColor(QPalette::Base, surfaceRaised);
+        p.setColor(QPalette::AlternateBase, surface);
+        p.setColor(QPalette::Text, textPrimary);
+        p.setColor(QPalette::Button, surfaceRaised);
+        p.setColor(QPalette::ButtonText, textPrimary);
+        p.setColor(QPalette::Light, line);
+        p.setColor(QPalette::Midlight, line);
+        p.setColor(QPalette::Mid, line);
+        p.setColor(QPalette::Dark, bgBase);
+        p.setColor(QPalette::ToolTipBase, surface);
+        p.setColor(QPalette::ToolTipText, textPrimary);
+        p.setColor(QPalette::PlaceholderText, textDim);
+        p.setColor(QPalette::Disabled, QPalette::Text, textDim);
+        p.setColor(QPalette::Disabled, QPalette::WindowText, textDim);
+        app.setPalette(p);
+    }
 
     const int geistSansId = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/Geist-Regular.ttf"));
     const int geistMonoId = QFontDatabase::addApplicationFont(QStringLiteral(":/fonts/GeistMono-Regular.ttf"));

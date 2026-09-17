@@ -27,11 +27,18 @@ BackgroundManager::BackgroundManager(SettingsStore &settings)
         const auto files = dir.entryList({QStringLiteral("*.jpg"), QStringLiteral("*.png"), QStringLiteral("*.webp")}, QDir::Files);
         for (const QString &f : files)
             d->wallpaperPaths.push_back(dir.filePath(f));
+        if (!d->wallpaperPaths.isEmpty())
+            d->currentUrl = QUrl::fromLocalFile(d->wallpaperPaths.first()).toString();
     }
-    if (d->wallpaperPaths.isEmpty())
-        d->currentUrl = QStringLiteral("qrc:/wallpapers/default.png");
-    else
-        d->currentUrl = QUrl::fromLocalFile(d->wallpaperPaths.first()).toString();
+    if (d->wallpaperPaths.isEmpty()) {
+        // No user folder configured: rotate through the bundled set instead
+        // of sitting on one static image.
+        d->wallpaperPaths = {QStringLiteral("qrc:/wallpapers/default.png"),
+                              QStringLiteral("qrc:/wallpapers/grad1.png"),
+                              QStringLiteral("qrc:/wallpapers/grad2.png"),
+                              QStringLiteral("qrc:/wallpapers/grad3.png")};
+        d->currentUrl = d->wallpaperPaths.first();
+    }
 }
 
 BackgroundManager::~BackgroundManager() = default;
@@ -74,7 +81,8 @@ void BackgroundManager::tick()
     d->lastRotationMs = 0;
     d->previousUrl = d->currentUrl;
     d->wallpaperIndex = (d->wallpaperIndex + 1) % d->wallpaperPaths.size();
-    d->currentUrl = QUrl::fromLocalFile(d->wallpaperPaths.at(d->wallpaperIndex)).toString();
+    const QString &next = d->wallpaperPaths.at(d->wallpaperIndex);
+    d->currentUrl = next.startsWith(QStringLiteral("qrc:")) ? next : QUrl::fromLocalFile(next).toString();
 }
 
 } // namespace polomodoro
