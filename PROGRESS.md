@@ -656,6 +656,22 @@ WebEngine entirely.**
   devices" copy (previously stale — told the user to "start spotifyd"
   manually, which no longer applies now that it auto-launches) to name
   this actual next step instead.
+- **Clarified for the user (worth recording — this comes up again easily):
+  the Web API OAuth/PKCE sign-in and `spotifyd`'s own device login are two
+  entirely separate credentials, not one.** The OAuth token only lets
+  Polomodoro call Spotify's *Web API* (browse, search, tell an
+  *already-connected* device what to play) — it grants zero playback
+  capability by itself. `spotifyd` needs its own separate, lower-level login
+  to become a real Spotify Connect device that can actually decode and
+  stream audio. Signing in once via the client id does not cover `spotifyd`;
+  it still needs either the one-time Zeroconf phone-tap pairing (current
+  behavior) or direct username/password auth (not yet implemented — would
+  let it register as a device on startup with no phone step at all, at the
+  cost of storing the actual Spotify account password/session token in the
+  keyring, a materially bigger secret than the scope-limited, revocable
+  OAuth access token currently handled). User was mid-decision on which
+  path they want at end of session — direct username/password auth for
+  `spotifyd` is a real, well-scoped next task if they choose it.
 
 ## Known gaps / next session
 
@@ -678,19 +694,38 @@ WebEngine entirely.**
 6. ~~The `DateTimeField` SpinBoxes render in light Fusion colors~~ — done in
    session 11: a global dark `QPalette` in `main.cpp` fixes every unstyled
    Fusion control app-wide, not just this one.
-7. `spotifyd` and `qtkeychain-qt6` are now installed via pacman (confirmed
-   `pacman -Qi`), and the build links `qtkeychain` so refresh tokens persist.
-   Still open: registering a Spotify Developer app for the PKCE client id and
-   running the real sign-in flow, and actually starting `spotifyd` and
-   confirming `NowPlayingStrip` picks it up — both need the user, since
-   starting `spotifyd` (any copy, pacman-installed or not) is blocked for
-   this agent by a blanket provenance rule in the permission layer.
+7. ~~`spotifyd`/`qtkeychain-qt6` install, PKCE client id, real sign-in~~ —
+   all done: both packages installed via pacman, user registered a Spotify
+   Developer app, real client id set, full PKCE round-trip completed
+   (refresh token persisting in the keyring), and `SpotifydManager` now
+   auto-launches `spotifyd` so the user never has to start it by hand (see
+   the "Auto-launch and manage a dedicated spotifyd child process" entry
+   above).
 8. ~~`MprisController`'s player-selection heuristic is untested~~ — done in
    session 11: verified live with two dummy MPRIS services over D-Bus
    (`dbus-python`) that a spotify-named player appearing later correctly
    takes over from a plain one already attached; the reverse (staying
    attached to spotify when a plain player later appears) is unambiguous by
    inspection of `onNameOwnerChanged`'s condition.
+9. **`spotifyd` still needs its own separate device-level login before
+   playback actually works.** The Web API OAuth token (item 7) only lets
+   Polomodoro call the *Web API* — browse, search, tell an
+   already-connected device what to play. It grants zero playback
+   capability by itself, and does not authenticate `spotifyd` as a device;
+   that is a completely separate credential. Right now `spotifyd` runs in
+   Zeroconf mode, which needs a **one-time manual pairing**: open Spotify on
+   any already-logged-in device (phone/desktop/web) and select "Polomodoro"
+   from the Connect device list once. Until that happens, `/me/player/
+   devices` returns zero devices and nothing can play (confirmed live: this
+   was the actual cause of a "clicking play does nothing" report, on top of
+   a separate real deadlock in `play()` that's now fixed — see the
+   `play()` fix entry above). Alternative not yet built: direct
+   username/password (or cached session token) auth baked into `spotifyd`'s
+   own launch config would skip the phone-tap entirely and register it as a
+   device on startup, at the cost of storing the actual Spotify account
+   password/session token in the keyring — a materially bigger secret than
+   the scope-limited, revocable OAuth token currently handled. User was
+   mid-decision on this tradeoff at end of session.
 
 ## Resume instructions
 
@@ -700,8 +735,8 @@ cmake --build build
 ./build/polomodoro
 ```
 
-Only real remaining gap is #5 and the user-side half of #7 — both need a
-real desktop session (Wayland pointer input; starting `spotifyd` and
-completing Spotify's OAuth login) that this agent cannot do headlessly or
-past its own permission layer. Otherwise the rulebook parity pass in session
-11 found no other outstanding items.
+Only two real gaps left: #5 (real Wayland pointer input — untestable
+headlessly) and #9 (decide whether to add direct username/password auth for
+`spotifyd`, or just do the one-time Zeroconf phone pairing and move on).
+Everything else from the original "Known gaps" list and the rulebook parity
+pass is closed.
