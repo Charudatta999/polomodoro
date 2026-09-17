@@ -129,7 +129,8 @@ detail (session log headers are dated; search for the topic).
 ## Debug affordances (permanent, safe to use)
 
 - `POLOMODORO_VERBOSE=1` — forces QML logging categories open and installs a handler that prints everything (this Qt build otherwise silently swallows `console.*`/`qmlWarning` output).
-- `POLOMODORO_SCREENSHOT=<path>` (+ optional `POLOMODORO_SCREENSHOT_DELAY_MS`, `POLOMODORO_VIEW_MODE`) — the app grabs its own window and exits; this desktop has no working screenshot portal, so this is the only way to see what's actually rendered. Combine with `2>&1 | grep "QML WARN"` for the rulebook §0 gate.
+- `POLOMODORO_SCREENSHOT=<path>` (+ optional `POLOMODORO_SCREENSHOT_DELAY`, `POLOMODORO_VIEW_MODE`) — the app grabs its own window and exits; this desktop has no working screenshot portal, so this is the only way to see what's actually rendered. Combine with `2>&1 | grep "QML WARN"` for the rulebook §0 gate.
+- `POLOMODORO_VIEW_MODE` takes a **comma-separated sequence**, not just one mode: `POLOMODORO_VIEW_MODE=0,1,0` drives expanded → bar → expanded before grabbing. Several real bugs only appear on the way *back* from bar/PiP (see the background-blanking fix), and a single `setMode()` cannot reproduce those. Steps are spread evenly across the screenshot delay; give it a generous delay (~10s for a 3-step sequence), since grabbing mid-resize yields a bar-shaped image.
 - `POLOMODORO_FRAME_TEST=<delay_ms>` — reports real window flags/frame margins to catch a compositor drawing an unwanted system titlebar.
 
 ## A note on working with `spotifyd` in this environment

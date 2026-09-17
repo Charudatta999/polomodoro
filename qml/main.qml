@@ -181,9 +181,17 @@ ApplicationWindow {
             visible: false
             layer.enabled: true
             layer.smooth: true
+            // Deliberately always visible, hidden by the opaque Rectangle
+            // below rather than by `visible: shell.wallpaperOn`. Toggling
+            // visibility on this subtree tears down the scene-graph nodes for
+            // the Image feeding BackgroundView's internal MultiEffect, and the
+            // effect never re-establishes that texture link when it comes
+            // back — so expanded → bar → expanded rendered a blank background
+            // forever, with the Image still reporting Ready and no error.
+            // In bar/PiP the window is tiny, so the cost of drawing behind an
+            // opaque rect is negligible.
             BackgroundView {
                 anchors.fill: parent
-                visible: shell.wallpaperOn
             }
             Rectangle {
                 anchors.fill: parent

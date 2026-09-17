@@ -287,11 +287,20 @@ int main(int argc, char *argv[])
         // Switch modes from inside the running event loop, not before exec():
         // pre-exec the window is not yet mapped and the size constraints behave
         // differently, which is not what a user pressing Ctrl+Shift+2 hits.
+        // Accepts a comma-separated sequence ("0,1,0"), not just one mode:
+        // several real bugs only appear on the way *back* from bar/PiP, so a
+        // single setMode() cannot reproduce them. Steps are spread evenly
+        // across the delay so each one settles before the next.
         if (qEnvironmentVariableIsSet("POLOMODORO_VIEW_MODE")) {
-            const int mode = qEnvironmentVariableIntValue("POLOMODORO_VIEW_MODE");
-            QTimer::singleShot(delayMs / 2, &app, [&windowLayout, mode]() {
-                windowLayout.setMode(mode);
-            });
+            const QStringList steps =
+                qEnvironmentVariable("POLOMODORO_VIEW_MODE").split(QLatin1Char(','), Qt::SkipEmptyParts);
+            for (int i = 0; i < steps.size(); ++i) {
+                const int mode = steps.at(i).trimmed().toInt();
+                const int at = delayMs * (i + 1) / (steps.size() + 1);
+                QTimer::singleShot(at, &app, [&windowLayout, mode]() {
+                    windowLayout.setMode(mode);
+                });
+            }
         }
 
         QTimer::singleShot(delayMs, &app, [&engine, shotPath]() {
