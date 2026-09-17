@@ -8,15 +8,12 @@ Linux desktop Pomodoro + stopwatch app with nested task tracking, SQLite persist
 sudo pacman -S qt6-base qt6-declarative cmake ninja gcc spotifyd qtkeychain-qt6
 ```
 
-`spotifyd` is the local Spotify Connect target that transport controls talk to
-over MPRIS. Polomodoro launches and owns its own `spotifyd` child process
-automatically (own config/cache dir under `~/.config/polomodoro/spotifyd`,
-device name "Polomodoro" by default) — you don't need to start it yourself,
-just install the package. Open Spotify on any device and select "Polomodoro"
-as the playback target (Spotify Connect), or run any other MPRIS-capable
-player (the official Spotify client, a browser, etc.) and Polomodoro picks
-that up instead. Auto-launch can be turned off in Settings → Music if you'd
-rather run your own `spotifyd` instance.
+`spotifyd` is the local Spotify Connect target. Polomodoro launches its own
+child (cache under `~/.config/polomodoro/spotifyd`, device name "Polomodoro").
+That process cannot play until it has **its own** librespot login — Settings →
+Music → **Sign in to spotifyd**. That is a different login from the Web API
+playlist/search account. Auto-launch can be turned off in Settings → Music if
+you'd rather run your own `spotifyd`.
 `qtkeychain-qt6` is optional but recommended: without it, signing in to
 Spotify's Web API does not survive a restart (the refresh token is kept in
 memory only, deliberately never written to the settings database).
@@ -49,15 +46,25 @@ cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPOLOMODORO_STATIC_STDCXX=ON
 
 ## Setting up Spotify
 
-Transport (play/pause/seek) works out of the box against any MPRIS player —
-run `spotifyd`, the official Spotify client, or anything else that exposes
-`org.mpris.MediaPlayer2.*`, and the now-playing strip picks it up automatically.
+Two separate logins. One without the other looks like "Spotify is connected
+but play 404s / nothing uses spotifyd."
 
-Playlists, search and switching devices need a one-time sign-in:
+**A. spotifyd (this machine actually plays audio)**
 
-1. Register an app at [developer.spotify.com](https://developer.spotify.com/dashboard) (free). Add `http://127.0.0.1:8888/callback` as a redirect URI (or pick a different port and set it in Settings → Spotify).
-2. Copy the app's **Client ID** into Settings → Spotify → Client ID. No client secret is needed — Polomodoro uses OAuth PKCE, which is designed for a public client ID.
-3. Click **Sign in** in the Music library overlay (`Ctrl+M`). Your browser opens Spotify's login page; after approving, it redirects back to a local port Polomodoro is listening on.
+1. Settings → Music → **Sign in to spotifyd**. A browser window opens
+   (`spotifyd authenticate`, redirect on `127.0.0.1:8890`).
+2. Approve. Credentials are stored under `~/.config/polomodoro/spotifyd`.
+3. Polomodoro restarts the daemon; "Polomodoro" should then show up as a
+   Connect device and MPRIS player once something is playing.
+
+**B. Web API (playlists, search, "play this URI on a device")**
+
+1. Register an app at [developer.spotify.com](https://developer.spotify.com/dashboard). Add `http://127.0.0.1:8888/callback` as a redirect URI.
+2. Copy the **Client ID** into Settings → Music → Client ID. No client secret — PKCE.
+3. Click **Sign in** in Settings or the Music library overlay (`Ctrl+M`).
+
+Play always targets the local "Polomodoro" device, not whatever phone or web
+player Spotify last marked active (those stale IDs are what produced HTTP 404).
 
 ## Data
 

@@ -12,30 +12,47 @@ class SettingsStore;
 // depend on the user starting one manually. A no-op if spotifyAutoLaunch is
 // off, the binary isn't found, or a spotify-named MPRIS player is already on
 // the bus (never launch a second one on top of the user's own).
+//
+// Zeroconf advertising is not enough for the Web API to play here.
+// `spotifyd authenticate` writes librespot credentials into our cache dir;
+// without those, play() hits some other (often stale) Connect device.
 class SpotifydManager : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
     Q_PROPERTY(bool binaryFound READ binaryFound CONSTANT)
+    Q_PROPERTY(bool credentialsPresent READ credentialsPresent NOTIFY credentialsChanged)
+    Q_PROPERTY(bool authenticating READ authenticating NOTIFY authenticatingChanged)
 public:
     explicit SpotifydManager(SettingsStore &settings, QObject *parent = nullptr);
     ~SpotifydManager() override;
 
     bool isRunning() const;
     bool binaryFound() const;
+    bool credentialsPresent() const;
+    bool authenticating() const;
 
     // Stops and relaunches — exposed for Settings, e.g. after the user
     // changes the device name or flips auto-launch back on.
     Q_INVOKABLE void restart();
+    // Opens spotifyd's own OAuth flow (separate from the Web API PKCE
+    // client). On success, credentials land in our cache and the daemon is
+    // restarted so it can register as a real Connect device.
+    Q_INVOKABLE void authenticate();
 
 signals:
     void runningChanged();
+    void credentialsChanged();
+    void authenticatingChanged();
 
 private:
     struct Impl;
     std::unique_ptr<Impl> d;
 
+    QString dataDir() const;
+    QString pidFilePath() const;
     void start();
     void stop();
+    void killStaleDaemon();
+    void refreshCredentialsPresent();
 };
-
 } // namespace polomodoro

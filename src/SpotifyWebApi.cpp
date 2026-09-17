@@ -6,10 +6,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLoggingCategory>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
+#include <QSet>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTimer>
@@ -21,6 +23,8 @@
 #endif
 
 namespace polomodoro {
+
+Q_LOGGING_CATEGORY(lcSpotify, "polomodoro.spotify")
 
 namespace {
 
@@ -87,9 +91,23 @@ struct SpotifyWebApi::Impl {
     QVariantList devices;
     QString currentDeviceId;
     QString currentDeviceName;
+    QString preferredDeviceId; // user pick via transferTo; empty = prefer local spotifyd
+    bool preferredIsUserPick = false;
+    QSet<QString> rejectedDeviceIds;
     QVariantList playlists;
     QVariantList results;
     QString pendingPlayUri; // set when play() had no device yet and is waiting on a fetchDevices() round-trip
+    int playRetryCount = 0;
+    QTimer devicePollTimer;
+    QTimer playbackTimer;
+    QString lastDeviceFingerprint;
+    bool remotePlaying = false;
+    QString remoteTitle;
+    QString remoteArtist;
+    QString remoteArtUrl;
+    double remotePositionRatio = 0;
+    QString remotePositionLabel = QStringLiteral("0:00");
+    QString remoteDurationLabel = QStringLiteral("0:00");
 
     explicit Impl(SettingsStore &s) : settings(s) {}
 };
@@ -100,8 +118,14 @@ SpotifyWebApi::SpotifyWebApi(SettingsStore &settings, QObject *parent)
     d->redirectPort = static_cast<quint16>(settings.getInt(QStringLiteral("spotifyRedirectPort"), 8888));
 
     connect(&d->refreshTimer, &QTimer::timeout, this, &SpotifyWebApi::refreshAccessToken);
+    d->devicePollTimer.setInterval(8000);
+    connect(&d->devicePollTimer, &QTimer::timeout, this, &SpotifyWebApi::fetchDevices);
+    d->playbackTimer.setInterval(1000);
+    connect(&d->playbackTimer, &QTimer::timeout, this, &SpotifyWebApi::fetchPlayback);
 
     checkConnectivity();
+    qCInfo(lcSpotify) << "constructed; clientConfigured=" << clientConfigured()
+                      << "redirectPort=" << d->redirectPort;
 
 #ifdef POLOMODORO_HAVE_KEYCHAIN
     // Attempt a silent sign-in from a token left in the keyring by a previous
@@ -111,8 +135,11 @@ SpotifyWebApi::SpotifyWebApi(SettingsStore &settings, QObject *parent)
     connect(readJob, &QKeychain::Job::finished, this, [this](QKeychain::Job *job) {
         auto *read = static_cast<QKeychain::ReadPasswordJob *>(job);
         if (read->error() == QKeychain::NoError && !read->textData().isEmpty()) {
+            qCInfo(lcSpotify) << "refresh token loaded from keyring";
             d->refreshTokenMemory = read->textData();
             refreshAccessToken();
+        } else {
+            qCInfo(lcSpotify) << "no refresh token in keyring (error" << int(read->error()) << ")";
         }
         job->deleteLater();
     });
@@ -129,6 +156,26 @@ QString SpotifyWebApi::currentDeviceId() const { return d->currentDeviceId; }
 QString SpotifyWebApi::currentDeviceName() const { return d->currentDeviceName; }
 QVariantList SpotifyWebApi::playlists() const { return d->playlists; }
 QVariantList SpotifyWebApi::results() const { return d->results; }
+
+bool SpotifyWebApi::controllingRemote() const
+{
+    if (d->currentDeviceId.isEmpty())
+        return false;
+    for (const QVariant &v : d->devices) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("id")).toString() == d->currentDeviceId)
+            return !m.value(QStringLiteral("isLocal")).toBool();
+    }
+    return true;
+}
+
+bool SpotifyWebApi::remotePlaying() const { return d->remotePlaying; }
+QString SpotifyWebApi::remoteTitle() const { return d->remoteTitle; }
+QString SpotifyWebApi::remoteArtist() const { return d->remoteArtist; }
+QString SpotifyWebApi::remoteArtUrl() const { return d->remoteArtUrl; }
+double SpotifyWebApi::remotePositionRatio() const { return d->remotePositionRatio; }
+QString SpotifyWebApi::remotePositionLabel() const { return d->remotePositionLabel; }
+QString SpotifyWebApi::remoteDurationLabel() const { return d->remoteDurationLabel; }
 
 bool SpotifyWebApi::clientConfigured() const
 {
@@ -158,9 +205,7 @@ void SpotifyWebApi::checkConnectivity()
 void SpotifyWebApi::beginPkce()
 {
     if (!clientConfigured()) {
-        // Never invent a client id — surfaced as authState staying "none";
-        // the UI's "Sign in" affordance is what should explain the gap via
-        // Settings, not this call pretending to succeed.
+        qCWarning(lcSpotify) << "beginPkce: no client id configured";
         return;
     }
 
@@ -169,9 +214,12 @@ void SpotifyWebApi::beginPkce()
 
     d->pkceServer = std::make_unique<QTcpServer>();
     if (!d->pkceServer->listen(QHostAddress::LocalHost, d->redirectPort)) {
+        qCWarning(lcSpotify) << "PKCE loopback listen failed on port" << d->redirectPort
+                             << d->pkceServer->errorString();
         d->pkceServer.reset();
         return;
     }
+    qCInfo(lcSpotify) << "PKCE loopback listening on 127.0.0.1:" << d->redirectPort;
 
     connect(d->pkceServer.get(), &QTcpServer::newConnection, this, [this]() {
         QTcpSocket *socket = d->pkceServer->nextPendingConnection();
@@ -201,8 +249,13 @@ void SpotifyWebApi::beginPkce()
                 socket->flush();
                 socket->disconnectFromHost();
 
-                if (error.isEmpty() && state == d->pendingState && !code.isEmpty())
+                if (error.isEmpty() && state == d->pendingState && !code.isEmpty()) {
+                    qCInfo(lcSpotify) << "PKCE redirect ok — exchanging code";
                     exchangeCodeForToken(code);
+                } else {
+                    qCWarning(lcSpotify) << "PKCE redirect rejected error=" << error
+                                         << "stateMatch=" << (state == d->pendingState);
+                }
             }
             // socket is a child of pkceServer: resetting the server here,
             // synchronously, would destroy socket while this very handler is
@@ -232,6 +285,7 @@ void SpotifyWebApi::beginPkce()
 
     d->authState = QStringLiteral("linking");
     emit authStateChanged();
+    qCInfo(lcSpotify) << "opened Spotify authorize URL";
 }
 
 void SpotifyWebApi::exchangeCodeForToken(const QString &code)
@@ -252,6 +306,8 @@ void SpotifyWebApi::exchangeCodeForToken(const QString &code)
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
+            qCWarning(lcSpotify) << "token exchange failed:" << reply->errorString()
+                                 << reply->readAll();
             d->authState = QStringLiteral("none");
             emit authStateChanged();
             return;
@@ -278,8 +334,11 @@ void SpotifyWebApi::exchangeCodeForToken(const QString &code)
 
         d->authState = QStringLiteral("linked");
         emit authStateChanged();
+        qCInfo(lcSpotify) << "signed in; token expires in" << expiresIn << "s";
 
         d->refreshTimer.start(qMax(30, expiresIn - 60) * 1000);
+        d->devicePollTimer.start();
+        d->playbackTimer.start();
         fetchDevices();
         fetchPlaylists();
     });
@@ -293,8 +352,12 @@ void SpotifyWebApi::refreshAccessToken()
 #else
         d->refreshTokenMemory;
 #endif
-    if (refreshToken.isEmpty() || !clientConfigured())
+    if (refreshToken.isEmpty() || !clientConfigured()) {
+        qCInfo(lcSpotify) << "refreshAccessToken skipped; haveToken=" << !refreshToken.isEmpty()
+                          << "clientConfigured=" << clientConfigured();
         return;
+    }
+    qCInfo(lcSpotify) << "refreshing access token";
 
     QUrlQuery body;
     body.addQueryItem(QStringLiteral("grant_type"), QStringLiteral("refresh_token"));
@@ -309,8 +372,12 @@ void SpotifyWebApi::refreshAccessToken()
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
+            qCWarning(lcSpotify) << "token refresh failed:" << reply->errorString()
+                                 << reply->readAll();
             d->authState = QStringLiteral("expired");
             emit authStateChanged();
+            d->devicePollTimer.stop();
+            d->playbackTimer.stop();
             return;
         }
         const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
@@ -330,7 +397,10 @@ void SpotifyWebApi::refreshAccessToken()
         }
         d->authState = QStringLiteral("linked");
         emit authStateChanged();
+        qCInfo(lcSpotify) << "access token refreshed; expires in" << expiresIn << "s";
         d->refreshTimer.start(qMax(30, expiresIn - 60) * 1000);
+        d->devicePollTimer.start();
+        d->playbackTimer.start();
         fetchDevices();
         fetchPlaylists();
     });
@@ -338,12 +408,20 @@ void SpotifyWebApi::refreshAccessToken()
 
 void SpotifyWebApi::signOut()
 {
+    qCInfo(lcSpotify) << "signOut";
     d->accessToken.clear();
     d->refreshTokenMemory.clear();
     d->refreshTimer.stop();
+    d->devicePollTimer.stop();
+    d->playbackTimer.stop();
     d->devices.clear();
     d->playlists.clear();
     d->results.clear();
+    d->currentDeviceId.clear();
+    d->currentDeviceName.clear();
+    d->preferredDeviceId.clear();
+    d->preferredIsUserPick = false;
+    d->rejectedDeviceIds.clear();
     d->authState = QStringLiteral("none");
 
 #ifdef POLOMODORO_HAVE_KEYCHAIN
@@ -368,6 +446,77 @@ QNetworkRequest authedRequest(const QString &path, const QString &accessToken)
 }
 } // namespace
 
+void SpotifyWebApi::refreshDevices()
+{
+    fetchDevices();
+}
+
+QString SpotifyWebApi::configuredDeviceName() const
+{
+    const QString n = d->settings.getString(QStringLiteral("spotifyDeviceName")).trimmed();
+    return n.isEmpty() ? QStringLiteral("Polomodoro") : n;
+}
+
+QString SpotifyWebApi::deviceNameForId(const QString &id) const
+{
+    for (const QVariant &v : d->devices) {
+        const QVariantMap m = v.toMap();
+        if (m.value(QStringLiteral("id")).toString() == id)
+            return m.value(QStringLiteral("name")).toString();
+    }
+    return {};
+}
+
+QString SpotifyWebApi::resolveTargetDeviceId() const
+{
+    auto usable = [this](const QVariantMap &m) -> QString {
+        const QString id = m.value(QStringLiteral("id")).toString();
+        if (id.isEmpty() || d->rejectedDeviceIds.contains(id))
+            return {};
+        if (m.value(QStringLiteral("isRestricted")).toBool())
+            return {};
+        return id;
+    };
+
+    QString localId;
+    QString activeId;
+    QString firstId;
+    for (const QVariant &v : d->devices) {
+        const QVariantMap m = v.toMap();
+        const QString id = usable(m);
+        if (id.isEmpty())
+            continue;
+        if (firstId.isEmpty())
+            firstId = id;
+        if (m.value(QStringLiteral("isLocal")).toBool() && localId.isEmpty())
+            localId = id;
+        if (m.value(QStringLiteral("isActive")).toBool() && activeId.isEmpty())
+            activeId = id;
+    }
+
+    if (d->preferredIsUserPick && !d->preferredDeviceId.isEmpty()) {
+        for (const QVariant &v : d->devices) {
+            const QString id = usable(v.toMap());
+            if (id == d->preferredDeviceId)
+                return id;
+        }
+        qCWarning(lcSpotify) << "user-picked device gone or unusable:" << d->preferredDeviceId;
+    }
+
+    // Playback belongs on this machine's spotifyd. Never fall through to a
+    // stale phone/web player just because Spotify still marks it active —
+    // that is the 404 "Not found" loop from PUT /me/player/play?device_id=.
+    if (!localId.isEmpty())
+        return localId;
+    // One Connect device and it is this machine: treat it as local even if
+    // the name setting was empty (SpotifydManager still advertises "Polomodoro").
+    if (!firstId.isEmpty() && d->devices.size() == 1)
+        return firstId;
+    if (d->preferredIsUserPick)
+        return activeId.isEmpty() ? firstId : activeId;
+    return {};
+}
+
 void SpotifyWebApi::fetchDevices()
 {
     if (d->accessToken.isEmpty())
@@ -375,33 +524,64 @@ void SpotifyWebApi::fetchDevices()
     QNetworkReply *reply = d->net.get(authedRequest(QStringLiteral("/me/player/devices"), d->accessToken));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
+        const QByteArray body = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (reply->error() != QNetworkReply::NoError) {
-            qWarning("SpotifyWebApi::fetchDevices: request failed: %s", qUtf8Printable(reply->errorString()));
+            qCWarning(lcSpotify) << "fetchDevices failed HTTP" << status << reply->errorString() << body.left(400);
             return;
         }
-        const QJsonArray arr = QJsonDocument::fromJson(reply->readAll())
+        const QJsonArray arr = QJsonDocument::fromJson(body)
                                     .object().value(QStringLiteral("devices")).toArray();
-        const QString localName = d->settings.getString(QStringLiteral("spotifyDeviceName"));
+        const QString localName = configuredDeviceName();
 
         QVariantList out;
-        QString activeId, activeName;
         for (const QJsonValue &v : arr) {
             const QJsonObject o = v.toObject();
             QVariantMap m;
             const QString id = o.value(QStringLiteral("id")).toString();
-            const QString name = o.value(QStringLiteral("name")).toString();
+            const QString name = o.value(QStringLiteral("name")).toString().trimmed();
+            const bool restricted = o.value(QStringLiteral("is_restricted")).toBool();
+            const bool active = o.value(QStringLiteral("is_active")).toBool();
+            const QString type = o.value(QStringLiteral("type")).toString();
+            const bool isLocal = !localName.isEmpty()
+                && (name.compare(localName, Qt::CaseInsensitive) == 0
+                    || name.startsWith(localName + QLatin1Char(' '), Qt::CaseInsensitive));
             m[QStringLiteral("id")] = id;
             m[QStringLiteral("name")] = name;
-            m[QStringLiteral("isLocal")] = !localName.isEmpty() && name == localName;
+            m[QStringLiteral("isLocal")] = isLocal;
+            m[QStringLiteral("isRestricted")] = restricted;
+            m[QStringLiteral("isActive")] = active;
+            m[QStringLiteral("type")] = type;
             out.push_back(m);
-            if (o.value(QStringLiteral("is_active")).toBool()) {
-                activeId = id;
-                activeName = name;
+        }
+        QString fingerprint;
+        for (const QVariant &v : out) {
+            const QVariantMap m = v.toMap();
+            fingerprint += m.value(QStringLiteral("id")).toString() + QLatin1Char(':')
+                + m.value(QStringLiteral("isActive")).toString() + QLatin1Char(';');
+        }
+        const bool changed = fingerprint != d->lastDeviceFingerprint;
+        d->lastDeviceFingerprint = fingerprint;
+        if (changed) {
+            for (const QVariant &v : out) {
+                const QVariantMap m = v.toMap();
+                qCInfo(lcSpotify) << "device" << m.value(QStringLiteral("name")).toString()
+                                  << "id" << m.value(QStringLiteral("id")).toString()
+                                  << "type" << m.value(QStringLiteral("type")).toString()
+                                  << "active" << m.value(QStringLiteral("isActive")).toBool()
+                                  << "restricted" << m.value(QStringLiteral("isRestricted")).toBool()
+                                  << "local" << m.value(QStringLiteral("isLocal")).toBool();
             }
         }
+
         d->devices = out;
-        d->currentDeviceId = activeId;
-        d->currentDeviceName = activeName;
+
+        const QString chosen = resolveTargetDeviceId();
+        d->currentDeviceId = chosen;
+        d->currentDeviceName = deviceNameForId(chosen);
+        if (changed)
+            qCInfo(lcSpotify) << "devices" << out.size() << "target" << d->currentDeviceName
+                              << d->currentDeviceId;
         emit devicesChanged();
 
         if (!d->pendingPlayUri.isEmpty()) {
@@ -421,7 +601,7 @@ void SpotifyWebApi::fetchPlaylists()
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            qWarning("SpotifyWebApi::fetchPlaylists: request failed: %s", qUtf8Printable(reply->errorString()));
+            qCWarning(lcSpotify) << "fetchPlaylists failed:" << reply->errorString() << reply->readAll().left(400);
             return;
         }
         const QJsonArray arr = QJsonDocument::fromJson(reply->readAll())
@@ -446,6 +626,7 @@ void SpotifyWebApi::fetchPlaylists()
             out.push_back(m);
         }
         d->playlists = out;
+        qCInfo(lcSpotify) << "playlists" << out.size();
         emit playlistsChanged();
     });
 }
@@ -454,6 +635,7 @@ void SpotifyWebApi::search(const QString &query)
 {
     if (d->accessToken.isEmpty() || query.trimmed().isEmpty())
         return;
+    qCInfo(lcSpotify) << "search" << query;
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("q"), query);
     q.addQueryItem(QStringLiteral("type"), QStringLiteral("track,playlist"));
@@ -473,8 +655,7 @@ void SpotifyWebApi::search(const QString &query)
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            qWarning("SpotifyWebApi::search: request failed: %s (body: %s)",
-                     qUtf8Printable(reply->errorString()), reply->readAll().constData());
+            qCWarning(lcSpotify) << "search failed:" << reply->errorString() << reply->readAll().left(400);
             return;
         }
         const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
@@ -513,67 +694,97 @@ void SpotifyWebApi::search(const QString &query)
         }
 
         d->results = out;
+        qCInfo(lcSpotify) << "search results" << out.size();
         emit resultsChanged();
     });
 }
 
 void SpotifyWebApi::play(const QString &uri)
 {
-    if (d->accessToken.isEmpty())
+    if (d->accessToken.isEmpty()) {
+        qCWarning(lcSpotify) << "play: not signed in (Web API)";
+        return;
+    }
+    if (uri.trimmed().isEmpty())
         return;
 
-    // currentDeviceId only ever gets set from a device Spotify already
-    // reports as "active" — but nothing becomes active until something
-    // plays there, so the very first play() of a session had no device to
-    // target and silently did nothing. Fall back to this machine's own
-    // device (isLocal, matched by spotifyDeviceName) from the last-known
-    // device list before giving up.
-    QString deviceId = d->currentDeviceId;
+    qCInfo(lcSpotify) << "play" << uri << "retry" << d->playRetryCount
+                      << "knownDevices" << d->devices.size();
+
+    const QString deviceId = resolveTargetDeviceId();
     if (deviceId.isEmpty()) {
-        for (const QVariant &v : d->devices) {
-            const QVariantMap m = v.toMap();
-            if (m.value(QStringLiteral("isLocal")).toBool()) {
-                deviceId = m.value(QStringLiteral("id")).toString();
-                break;
-            }
+        if (d->playRetryCount < 2) {
+            d->pendingPlayUri = uri;
+            ++d->playRetryCount;
+            qCInfo(lcSpotify) << "play: Polomodoro is not in the Connect device list yet — refetching";
+            fetchDevices();
+            return;
         }
-    }
-    if (deviceId.isEmpty() && d->devices.isEmpty()) {
-        // Devices haven't been fetched yet this session (or genuinely none
-        // exist) — try once more and resume this play once the list is in.
-        d->pendingPlayUri = uri;
-        fetchDevices();
-        return;
-    }
-    if (deviceId.isEmpty()) {
-        qWarning("SpotifyWebApi::play: no target device — open the device "
-                 "picker and select one (spotifyd not yet visible to Spotify Connect?).");
+        d->playRetryCount = 0;
+        qCWarning(lcSpotify) << "play: refusing to target a non-local device. "
+                                "spotifyd is not visible to Spotify yet. Sign in to spotifyd in "
+                                "Settings → Music (librespot OAuth — not the playlist Sign in).";
         return;
     }
 
+    d->playRetryCount = 0;
+    putPlay(uri, deviceId);
+}
+
+void SpotifyWebApi::putPlay(const QString &uri, const QString &deviceId)
+{
     QJsonObject body;
-    // Track/episode URIs go in "uris"; playlist/album/artist play as a context.
     if (uri.contains(QStringLiteral(":track:")) || uri.contains(QStringLiteral(":episode:")))
         body[QStringLiteral("uris")] = QJsonArray{uri};
     else
         body[QStringLiteral("context_uri")] = uri;
 
+    qCInfo(lcSpotify) << "PUT /me/player/play device" << deviceNameForId(deviceId) << deviceId << uri;
     QNetworkRequest req = authedRequest(
         QStringLiteral("/me/player/play?device_id=") + deviceId, d->accessToken);
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QNetworkReply *reply = d->net.put(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, uri, deviceId]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
-            qWarning("SpotifyWebApi::play: request failed: %s (body: %s)",
-                     qUtf8Printable(reply->errorString()), reply->readAll().constData());
+        const QByteArray bodyBytes = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status >= 200 && status < 300) {
+            qCInfo(lcSpotify) << "play ok HTTP" << status << "on" << deviceNameForId(deviceId);
+            d->rejectedDeviceIds.remove(deviceId);
+            d->playRetryCount = 0;
+            QTimer::singleShot(500, this, &SpotifyWebApi::fetchDevices);
+            return;
+        }
+        qCWarning(lcSpotify) << "play failed HTTP" << status << reply->errorString() << bodyBytes.left(500);
+        if (status == 404) {
+            bool wasLocal = false;
+            for (const QVariant &v : d->devices) {
+                const QVariantMap m = v.toMap();
+                if (m.value(QStringLiteral("id")).toString() == deviceId)
+                    wasLocal = m.value(QStringLiteral("isLocal")).toBool();
+            }
+            if (!wasLocal)
+                d->rejectedDeviceIds.insert(deviceId);
+            qCInfo(lcSpotify) << "play 404 on" << deviceId << "local=" << wasLocal
+                              << "— refetching devices";
+            if (d->preferredDeviceId == deviceId)
+                d->preferredIsUserPick = false;
+            d->pendingPlayUri = uri;
+            ++d->playRetryCount;
+            fetchDevices();
+        }
     });
 }
 
 void SpotifyWebApi::transferTo(const QString &deviceId)
 {
-    if (d->accessToken.isEmpty())
+    if (d->accessToken.isEmpty() || deviceId.isEmpty())
         return;
+    d->preferredDeviceId = deviceId;
+    d->preferredIsUserPick = true;
+    d->rejectedDeviceIds.remove(deviceId);
+    qCInfo(lcSpotify) << "transferTo" << deviceNameForId(deviceId) << deviceId;
+
     QJsonObject body;
     body[QStringLiteral("device_ids")] = QJsonArray{deviceId};
     body[QStringLiteral("play")] = true;
@@ -583,8 +794,82 @@ void SpotifyWebApi::transferTo(const QString &deviceId)
     QNetworkReply *reply = d->net.put(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, deviceId]() {
         reply->deleteLater();
-        if (reply->error() == QNetworkReply::NoError)
+        const QByteArray bodyBytes = reply->readAll();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (status >= 200 && status < 300) {
+            qCInfo(lcSpotify) << "transfer ok HTTP" << status;
             fetchDevices();
+            return;
+        }
+        qCWarning(lcSpotify) << "transfer failed HTTP" << status << reply->errorString() << bodyBytes.left(400);
+        if (status == 404)
+            d->rejectedDeviceIds.insert(deviceId);
+        fetchDevices();
+    });
+}
+
+void SpotifyWebApi::playerCommand(const QString &method, const QString &path)
+{
+    if (d->accessToken.isEmpty())
+        return;
+    QNetworkRequest req = authedRequest(path, d->accessToken);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    QNetworkReply *reply = method == QLatin1String("POST")
+        ? d->net.post(req, QByteArray("{}"))
+        : d->net.put(req, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, path]() {
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        qCInfo(lcSpotify) << "playerCommand" << path << "HTTP" << status;
+        if (status >= 200 && status < 300)
+            fetchPlayback();
+        else
+            qCWarning(lcSpotify) << "playerCommand failed" << reply->errorString() << reply->readAll().left(300);
+    });
+}
+
+void SpotifyWebApi::pausePlayback() { playerCommand(QStringLiteral("PUT"), QStringLiteral("/me/player/pause")); }
+void SpotifyWebApi::skipNext() { playerCommand(QStringLiteral("POST"), QStringLiteral("/me/player/next")); }
+void SpotifyWebApi::skipPrevious() { playerCommand(QStringLiteral("POST"), QStringLiteral("/me/player/previous")); }
+void SpotifyWebApi::togglePlayback()
+{
+    if (d->remotePlaying)
+        pausePlayback();
+    else
+        playerCommand(QStringLiteral("PUT"), QStringLiteral("/me/player/play"));
+}
+
+void SpotifyWebApi::fetchPlayback()
+{
+    if (d->accessToken.isEmpty() || !controllingRemote())
+        return;
+    QNetworkReply *reply = d->net.get(authedRequest(QStringLiteral("/me/player"), d->accessToken));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
+        d->remotePlaying = obj.value(QStringLiteral("is_playing")).toBool();
+        const QJsonObject item = obj.value(QStringLiteral("item")).toObject();
+        d->remoteTitle = item.value(QStringLiteral("name")).toString();
+        QStringList artists;
+        for (const QJsonValue &a : item.value(QStringLiteral("artists")).toArray())
+            artists << a.toObject().value(QStringLiteral("name")).toString();
+        d->remoteArtist = artists.join(QStringLiteral(", "));
+        const QJsonArray images = item.value(QStringLiteral("album")).toObject()
+                                       .value(QStringLiteral("images")).toArray();
+        d->remoteArtUrl = images.isEmpty() ? QString()
+            : images.last().toObject().value(QStringLiteral("url")).toString();
+        const qint64 durationMs = item.value(QStringLiteral("duration_ms")).toInt();
+        const qint64 progressMs = obj.value(QStringLiteral("progress_ms")).toInt();
+        d->remotePositionRatio = durationMs > 0 ? qBound(0.0, double(progressMs) / double(durationMs), 1.0) : 0.0;
+        auto fmt = [](qint64 ms) {
+            const qint64 s = qMax(0LL, ms) / 1000;
+            return QStringLiteral("%1:%2").arg(s / 60).arg(s % 60, 2, 10, QLatin1Char('0'));
+        };
+        d->remotePositionLabel = fmt(progressMs);
+        d->remoteDurationLabel = fmt(durationMs);
+        emit remotePlaybackChanged();
     });
 }
 

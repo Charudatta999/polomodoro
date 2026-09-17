@@ -1,4 +1,5 @@
 #include "polomodoro/MprisController.h"
+#include "polomodoro/SpotifyWebApi.h"
 
 #include <QDBusArgument>
 #include <QDBusConnection>
@@ -7,9 +8,14 @@
 #include <QDBusMessage>
 #include <QDBusReply>
 #include <QDBusVariant>
+#include <QLoggingCategory>
 #include <QTimer>
+#include <QVariantList>
+#include <QVariantMap>
 
 namespace polomodoro {
+
+Q_LOGGING_CATEGORY(lcMpris, "polomodoro.mpris")
 
 namespace {
 
@@ -54,6 +60,9 @@ struct MprisController::Impl {
     double positionRatio = 0.0;
     QString positionLabel = QStringLiteral("0:00");
     QString durationLabel = QStringLiteral("0:00");
+    SpotifyWebApi *api = nullptr;
+    bool userPinned = false;
+    QVariantList players;
 };
 
 MprisController::MprisController(QObject *parent) : QObject(parent), d(std::make_unique<Impl>())
@@ -62,14 +71,88 @@ MprisController::MprisController(QObject *parent) : QObject(parent), d(std::make
     connect(&d->positionTimer, &QTimer::timeout, this, &MprisController::refreshPosition);
 
     auto *bus = QDBusConnection::sessionBus().interface();
-    // A player appearing or vanishing is a signal, never a poll.
-    connect(bus, &QDBusConnectionInterface::serviceOwnerChanged, this,
-            &MprisController::onNameOwnerChanged);
+    Q_UNUSED(bus);
+    // Avoid QDBusConnectionInterface::serviceOwnerChanged — it is deprecated
+    // and logs on every startup. NameOwnerChanged is the same signal.
+    QDBusConnection::sessionBus().connect(
+        QStringLiteral("org.freedesktop.DBus"),
+        QStringLiteral("/org/freedesktop/DBus"),
+        QStringLiteral("org.freedesktop.DBus"),
+        QStringLiteral("NameOwnerChanged"),
+        this, SLOT(onNameOwnerChanged(QString,QString,QString)));
 
     findExistingPlayer();
+    rebuildPlayerList();
 }
 
 MprisController::~MprisController() = default;
+
+void MprisController::setSpotifyApi(SpotifyWebApi *api)
+{
+    d->api = api;
+    if (!api)
+        return;
+    connect(api, &SpotifyWebApi::remotePlaybackChanged, this, [this]() {
+        emit playbackChanged();
+        emit positionChanged();
+        emit availableChanged();
+    });
+    connect(api, &SpotifyWebApi::devicesChanged, this, [this]() {
+        emit availableChanged();
+        emit playbackChanged();
+    });
+}
+
+QString MprisController::identityFor(const QString &serviceName) const
+{
+    QDBusInterface props(serviceName, QString::fromLatin1(kMprisPath),
+                         QString::fromLatin1(kPropsIface), QDBusConnection::sessionBus());
+    QDBusReply<QVariant> reply = props.call(QStringLiteral("Get"),
+                                            QStringLiteral("org.mpris.MediaPlayer2"),
+                                            QStringLiteral("Identity"));
+    if (reply.isValid()) {
+        const QString id = reply.value().toString().trimmed();
+        if (!id.isEmpty())
+            return id;
+    }
+    QString tail = serviceName;
+    tail.remove(QString::fromLatin1(kMprisPrefix));
+    const int dot = tail.indexOf(QLatin1Char('.'));
+    if (dot > 0)
+        tail = tail.left(dot);
+    return tail;
+}
+
+void MprisController::rebuildPlayerList()
+{
+    QVariantList out;
+    const QStringList services = QDBusConnection::sessionBus().interface()->registeredServiceNames();
+    for (const QString &name : services) {
+        if (!name.startsWith(QLatin1String(kMprisPrefix)))
+            continue;
+        QVariantMap m;
+        m[QStringLiteral("service")] = name;
+        m[QStringLiteral("name")] = identityFor(name);
+        m[QStringLiteral("current")] = (name == d->serviceName);
+        m[QStringLiteral("spotify")] = name.contains(QLatin1String("spotify"), Qt::CaseInsensitive);
+        out.push_back(m);
+    }
+    d->players = out;
+    emit playersChanged();
+}
+
+QVariantList MprisController::players() const { return d->players; }
+QString MprisController::currentService() const { return d->serviceName; }
+
+void MprisController::selectPlayer(const QString &serviceName)
+{
+    if (serviceName.isEmpty())
+        return;
+    qCInfo(lcMpris) << "user selected" << serviceName;
+    d->userPinned = true;
+    attachToPlayer(serviceName);
+    rebuildPlayerList();
+}
 
 void MprisController::findExistingPlayer()
 {
@@ -79,6 +162,10 @@ void MprisController::findExistingPlayer()
     for (const QString &name : services) {
         if (!name.startsWith(QLatin1String(kMprisPrefix)))
             continue;
+        if (d->userPinned && name == d->serviceName) {
+            preferred = name;
+            break;
+        }
         if (name.contains(QLatin1String("spotifyd"), Qt::CaseInsensitive)
             || name.contains(QLatin1String("spotify"), Qt::CaseInsensitive)) {
             preferred = name;
@@ -88,8 +175,11 @@ void MprisController::findExistingPlayer()
             fallback = name;
     }
     const QString chosen = !preferred.isEmpty() ? preferred : fallback;
+    qCInfo(lcMpris) << "findExistingPlayer preferred" << preferred << "fallback" << fallback
+                    << "pinned" << d->userPinned;
     if (!chosen.isEmpty())
         attachToPlayer(chosen);
+    rebuildPlayerList();
 }
 
 void MprisController::onNameOwnerChanged(const QString &name, const QString &oldOwner,
@@ -102,18 +192,23 @@ void MprisController::onNameOwnerChanged(const QString &name, const QString &old
     const bool vanishing = !oldOwner.isEmpty() && newOwner.isEmpty();
 
     if (vanishing && name == d->serviceName) {
+        qCInfo(lcMpris) << "player vanished" << name;
+        d->userPinned = false;
         detachPlayer();
-        // Fall back to any other player still on the bus, if one exists.
         findExistingPlayer();
         return;
     }
 
-    // Prefer a spotifyd/spotify player over whatever is currently attached,
-    // and attach to anything if nothing is attached yet.
-    if (appearing && (d->serviceName.isEmpty()
-                       || name.contains(QLatin1String("spotify"), Qt::CaseInsensitive))) {
+    if (appearing) {
+        rebuildPlayerList();
+        if (d->userPinned || !d->serviceName.isEmpty())
+            return;
+        qCInfo(lcMpris) << "player appeared" << name << "attaching";
         attachToPlayer(name);
+        return;
     }
+    if (vanishing)
+        rebuildPlayerList();
 }
 
 void MprisController::attachToPlayer(const QString &serviceName)
@@ -123,6 +218,7 @@ void MprisController::attachToPlayer(const QString &serviceName)
     detachPlayer();
 
     d->serviceName = serviceName;
+    qCInfo(lcMpris) << "attached to" << serviceName;
     QDBusConnection bus = QDBusConnection::sessionBus();
     d->props = new QDBusInterface(serviceName, QString::fromLatin1(kMprisPath),
                                    QString::fromLatin1(kPropsIface), bus, this);
@@ -136,6 +232,7 @@ void MprisController::attachToPlayer(const QString &serviceName)
 
     refreshMetadata();
     emit availableChanged();
+    rebuildPlayerList();
 }
 
 void MprisController::detachPlayer()
@@ -193,6 +290,7 @@ void MprisController::refreshMetadata()
         d->lengthUs = meta.value(QStringLiteral("mpris:length")).toLongLong();
         d->durationLabel = formatMs(d->lengthUs / 1000);
     }
+    qCInfo(lcMpris) << "metadata" << status << d->title << d->artist;
 
     if (d->isPlaying)
         d->positionTimer.start();
@@ -225,38 +323,89 @@ void MprisController::refreshPosition()
     emit positionChanged();
 }
 
-bool MprisController::available() const { return d->player != nullptr; }
-bool MprisController::isPlaying() const { return d->isPlaying; }
-QString MprisController::title() const { return d->title; }
-QString MprisController::artist() const { return d->artist; }
+bool MprisController::available() const
+{
+    return d->player != nullptr || (d->api && d->api->controllingRemote());
+}
+bool MprisController::isPlaying() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remotePlaying() : d->isPlaying;
+}
+QString MprisController::title() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remoteTitle() : d->title;
+}
+QString MprisController::artist() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remoteArtist() : d->artist;
+}
 QString MprisController::album() const { return d->album; }
-QString MprisController::artUrl() const { return d->artUrl; }
+QString MprisController::artUrl() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remoteArtUrl() : d->artUrl;
+}
 
 QString MprisController::nowPlayingLabel() const
 {
-    if (d->title.isEmpty())
+    const QString t = title();
+    if (t.isEmpty())
         return QString();
-    return d->artist.isEmpty() ? d->title : (d->title + QStringLiteral(" — ") + d->artist);
+    const QString a = artist();
+    return a.isEmpty() ? t : (t + QStringLiteral(" — ") + a);
 }
 
-double MprisController::positionRatio() const { return d->positionRatio; }
-QString MprisController::positionLabel() const { return d->positionLabel; }
-QString MprisController::durationLabel() const { return d->durationLabel; }
+double MprisController::positionRatio() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remotePositionRatio() : d->positionRatio;
+}
+QString MprisController::positionLabel() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remotePositionLabel() : d->positionLabel;
+}
+QString MprisController::durationLabel() const
+{
+    return (d->api && d->api->controllingRemote()) ? d->api->remoteDurationLabel() : d->durationLabel;
+}
+
+bool MprisController::isSpotifyPlayer() const
+{
+    if (d->api && d->api->controllingRemote())
+        return true;
+    if (d->serviceName.contains(QLatin1String("spotify"), Qt::CaseInsensitive))
+        return true;
+    const QString url = artUrl();
+    return url.contains(QLatin1String("scdn.co")) || url.contains(QLatin1String("spotify"));
+}
 
 void MprisController::togglePlayPause()
 {
+    if (d->api && d->api->controllingRemote()) {
+        d->api->togglePlayback();
+        return;
+    }
+    qCInfo(lcMpris) << "PlayPause available=" << (d->player != nullptr) << "playing=" << d->isPlaying;
     if (d->player)
         d->player->asyncCall(QStringLiteral("PlayPause"));
 }
 
 void MprisController::next()
 {
+    if (d->api && d->api->controllingRemote()) {
+        d->api->skipNext();
+        return;
+    }
+    qCInfo(lcMpris) << "Next";
     if (d->player)
         d->player->asyncCall(QStringLiteral("Next"));
 }
 
 void MprisController::previous()
 {
+    if (d->api && d->api->controllingRemote()) {
+        d->api->skipPrevious();
+        return;
+    }
+    qCInfo(lcMpris) << "Previous";
     if (d->player)
         d->player->asyncCall(QStringLiteral("Previous"));
 }

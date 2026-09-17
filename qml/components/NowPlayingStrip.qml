@@ -62,8 +62,9 @@ Rectangle {
                 color: Theme.textPrimary
                 elide: Text.ElideRight
                 text: root.noPlayer ? "No player running"
-                    : root.notLinked ? "Connect your Spotify account"
-                    : MprisController.title
+                    : (MprisController.title !== "" ? MprisController.title
+                       : root.notLinked ? "Connect your Spotify account"
+                       : "No track")
             }
             Text {
                 Layout.fillWidth: true
@@ -73,21 +74,33 @@ Rectangle {
                 elide: Text.ElideRight
                 text: root.noPlayer
                     ? (!SpotifydManager.binaryFound ? "Install spotifyd (see README), or play from any Spotify app"
-                       : SpotifydManager.running ? "Open Spotify and select “" + SettingsController.spotifyDeviceName + "” as the device"
+                       : SpotifydManager.authenticating ? "Finish spotifyd sign-in in the browser"
+                       : !SpotifydManager.credentialsPresent ? "Settings → Music → Sign in to spotifyd (needed to play here)"
+                       : SpotifydManager.running ? "Waiting for Spotify to list “" + SettingsController.spotifyDeviceName + "”"
                        : "Starting spotifyd…")
+                    : MprisController.artist !== "" ? MprisController.artist
                     : root.notLinked ? "Needed for playlists, search and devices"
                     : root.offline ? "Offline — showing last known state"
-                    : MprisController.artist
+                    : ""
             }
         }
 
-        // Sign-in is the remedy for state 02, so it replaces nothing else.
+        // Two different logins — never collapse them. Web API (playlists)
+        // vs spotifyd (this machine can actually play).
         PillButton {
-            visible: root.notLinked && !root.noPlayer
+            visible: root.notLinked && !root.noPlayer && MprisController.isSpotifyPlayer
             label: "Sign in"
             primary: true
             small: true
             onClicked: SpotifyWebApi.beginPkce()
+        }
+        PillButton {
+            visible: root.noPlayer && SpotifydManager.binaryFound && !SpotifydManager.credentialsPresent
+            label: SpotifydManager.authenticating ? "Waiting…" : "Sign in to spotifyd"
+            primary: true
+            small: true
+            enabled: !SpotifydManager.authenticating
+            onClicked: SpotifydManager.authenticate()
         }
 
         // Transport needs no account and no network — MPRIS is a local bus.
@@ -133,8 +146,8 @@ Rectangle {
             spacing: Theme.md
             IconButton {
                 glyph: "device"
-                tooltip: SpotifyWebApi.currentDeviceName || "Choose a device"
-                enabled: !root.notLinked && !root.offline
+                tooltip: SpotifyWebApi.currentDeviceName || "Choose player or device"
+                enabled: MprisController.players.length > 0 || (!root.notLinked && !root.offline)
                 onClicked: devices.open()
             }
             IconButton { glyph: "tasks"; tooltip: "Library (Ctrl+M)"; onClicked: root.libraryRequested() }

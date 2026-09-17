@@ -33,6 +33,14 @@ class SpotifyWebApi : public QObject {
     Q_PROPERTY(QVariantList playlists READ playlists NOTIFY playlistsChanged)
     Q_PROPERTY(QVariantList results READ results NOTIFY resultsChanged)
     Q_PROPERTY(bool clientConfigured READ clientConfigured NOTIFY authStateChanged)
+    Q_PROPERTY(bool controllingRemote READ controllingRemote NOTIFY devicesChanged)
+    Q_PROPERTY(bool remotePlaying READ remotePlaying NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(QString remoteTitle READ remoteTitle NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(QString remoteArtist READ remoteArtist NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(QString remoteArtUrl READ remoteArtUrl NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(double remotePositionRatio READ remotePositionRatio NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(QString remotePositionLabel READ remotePositionLabel NOTIFY remotePlaybackChanged)
+    Q_PROPERTY(QString remoteDurationLabel READ remoteDurationLabel NOTIFY remotePlaybackChanged)
 public:
     explicit SpotifyWebApi(SettingsStore &settings, QObject *parent = nullptr);
     ~SpotifyWebApi() override;
@@ -48,12 +56,25 @@ public:
     // registered at developer.spotify.com; there is no default that would
     // work for every install, so none is invented here.
     bool clientConfigured() const;
+    bool controllingRemote() const;
+    bool remotePlaying() const;
+    QString remoteTitle() const;
+    QString remoteArtist() const;
+    QString remoteArtUrl() const;
+    double remotePositionRatio() const;
+    QString remotePositionLabel() const;
+    QString remoteDurationLabel() const;
 
     Q_INVOKABLE void beginPkce();
     Q_INVOKABLE void search(const QString &query);
     Q_INVOKABLE void play(const QString &uri);
     Q_INVOKABLE void transferTo(const QString &deviceId);
     Q_INVOKABLE void signOut();
+    Q_INVOKABLE void refreshDevices();
+    Q_INVOKABLE void pausePlayback();
+    Q_INVOKABLE void skipNext();
+    Q_INVOKABLE void skipPrevious();
+    Q_INVOKABLE void togglePlayback();
 
 signals:
     void authStateChanged();
@@ -61,6 +82,7 @@ signals:
     void devicesChanged();
     void playlistsChanged();
     void resultsChanged();
+    void remotePlaybackChanged();
     // Carries the callback URL's query string once the loopback server
     // catches the redirect, for the code-exchange step.
     void pkceRedirectReceived(const QString &query);
@@ -74,6 +96,12 @@ private:
     void fetchDevices();
     void fetchPlaylists();
     void checkConnectivity();
+    QString resolveTargetDeviceId() const;
+    QString deviceNameForId(const QString &id) const;
+    QString configuredDeviceName() const;
+    void putPlay(const QString &uri, const QString &deviceId);
+    void fetchPlayback();
+    void playerCommand(const QString &method, const QString &path);
 };
 
 } // namespace polomodoro
