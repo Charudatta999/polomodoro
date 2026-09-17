@@ -524,6 +524,29 @@ WebEngine entirely.**
   re-checked: #4 turned out to already be fully wired (`SettingsView.qml`'s
   "Progress counts" `PoloSegmented` in the Tasks tab) — the gap list itself
   was stale, not the code; #5 still needs a real desktop session.
+- **Real bug found and fixed: `SettingsStore::seedDefaults()` silently
+  failed to seed any empty-string default.** `ensure(key, QString())` binds
+  a *null* `QString`, not `""`, and the `settings` table's `value` column is
+  `TEXT NOT NULL` — the `INSERT OR IGNORE` for `backgroundUserPath`,
+  `spotifyClientId`, and `spotifyDeviceName` was failing every single run,
+  silently, because `ensure()`'s `q.exec()` return value was never checked
+  (exactly the "silent catch" pattern rulebook §4 forbids). Caught it while
+  setting the user's real Spotify client id directly: the row simply didn't
+  exist in the real profile's database despite the app having run against
+  it multiple times since the pivot. Fixed at the root (`ensure()` now
+  coerces a null default to `""` before binding, and logs via `qWarning` on
+  any future `exec()` failure) rather than patching the three call sites.
+- **Spotify client id set and the local PKCE half verified live** against
+  the user's real profile: wrote `spotifyClientId` into the real
+  `polomodoro.db`, then a temporary debug hook (removed after) called
+  `SpotifyWebApi::beginPkce()` directly and confirmed `clientConfigured=1`,
+  `authState` transitioning to `linking`, a real `QTcpServer` listener bound
+  on `127.0.0.1:8888` (`ss -tlnp` showed it owned by the running
+  `polomodoro` process), and `QDesktopServices::openUrl` successfully
+  launching the system browser (`xdg-open` reported "Opening in existing
+  browser session"). This is the entire local-machine half of the PKCE flow
+  confirmed working end-to-end; only the actual login-and-approve step in
+  the browser remains, which needs the user's own Spotify credentials.
 
 ## Known gaps / next session
 

@@ -2,6 +2,7 @@
 
 #include "polomodoro/DatabaseManager.h"
 
+#include <QSqlError>
 #include <QSqlQuery>
 
 namespace polomodoro {
@@ -19,8 +20,14 @@ void SettingsStore::seedDefaults()
         QSqlQuery q(d->db.database());
         q.prepare(QStringLiteral("INSERT OR IGNORE INTO settings(key, value) VALUES(?, ?)"));
         q.addBindValue(key);
-        q.addBindValue(value);
-        q.exec();
+        // A null QString() binds as SQL NULL, not "", and `value` is NOT
+        // NULL — that insert fails and INSERT OR IGNORE swallows it, so an
+        // empty-string default (backgroundUserPath, spotifyClientId,
+        // spotifyDeviceName) would silently never get seeded.
+        q.addBindValue(value.isNull() ? QStringLiteral("") : value);
+        if (!q.exec())
+            qWarning("SettingsStore::seedDefaults: failed to seed '%s': %s",
+                     qUtf8Printable(key), qUtf8Printable(q.lastError().text()));
     };
 
     ensure(QStringLiteral("pomodoroWorkMs"), QStringLiteral("1500000"));
