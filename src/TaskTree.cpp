@@ -314,6 +314,47 @@ bool TaskTree::reparentTask(const QString &id, const QString &newParentId)
     return saveTask(id);
 }
 
+bool TaskTree::promoteTask(const QString &id)
+{
+    TaskNode *node = findById(id);
+    if (!node || node->parentId.isEmpty())
+        return false;
+    TaskNode *parent = findById(node->parentId);
+    if (!parent)
+        return false;
+    return reparentTask(id, parent->parentId);
+}
+
+bool TaskTree::demoteTask(const QString &id)
+{
+    TaskNode *node = findById(id);
+    if (!node)
+        return false;
+    QVector<TaskNode> *sibs = nullptr;
+    if (node->parentId.isEmpty()) {
+        sibs = &d->roots;
+    } else if (TaskNode *parent = findById(node->parentId)) {
+        sibs = &parent->children;
+    }
+    if (!sibs)
+        return false;
+    QVector<TaskNode *> ordered;
+    for (TaskNode &s : *sibs)
+        ordered.push_back(&s);
+    std::sort(ordered.begin(), ordered.end(), [](const TaskNode *a, const TaskNode *b) {
+        return a->sortOrder < b->sortOrder;
+    });
+    TaskNode *prev = nullptr;
+    for (TaskNode *s : ordered) {
+        if (s->id == id)
+            break;
+        prev = s;
+    }
+    if (!prev)
+        return false;
+    return reparentTask(id, prev->id);
+}
+
 void TaskTree::finalizeActiveSegment(TaskNode &node, const QDateTime &now)
 {
     if (node.status == TaskStatus::Active && node.activeSince.isValid()) {

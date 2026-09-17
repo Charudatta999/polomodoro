@@ -22,6 +22,9 @@ public:
     void setInt(const QString &key, int value);
     void setBool(const QString &key, bool value);
 
+    QString integrityReport() const;
+    bool exportSessionsCsv(const QString &path, QString *error) const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> d;

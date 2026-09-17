@@ -4,6 +4,7 @@
 #include <polomodoro/DatabaseManager.h>
 #include <polomodoro/MprisController.h>
 #include <polomodoro/NotificationManager.h>
+#include <polomodoro/PaletteDeriver.h>
 #include <polomodoro/SettingsController.h>
 #include <polomodoro/SettingsStore.h>
 #include <polomodoro/ShutdownGuard.h>
@@ -54,6 +55,10 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("Polomodoro"));
     QCoreApplication::setApplicationName(QStringLiteral("polomodoro"));
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+    // Rounded window corners are alpha holes in a rectangular buffer. Without
+    // this the compositor gets an opaque square and the radius never punches
+    // through to the desktop.
+    QQuickWindow::setDefaultAlphaBuffer(true);
 
     QGuiApplication app(argc, argv);
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
@@ -129,14 +134,34 @@ int main(int argc, char *argv[])
     polomodoro::SpotifydManager spotifydManager(settings);
     polomodoro::MprisController mprisController;
     polomodoro::SpotifyWebApi spotifyWebApi(settings);
+    mprisController.setSpotifyApi(&spotifyWebApi);
+    polomodoro::PaletteDeriver paletteDeriver(settings);
+
+    QObject::connect(&spotifydManager, &polomodoro::SpotifydManager::runningChanged, &spotifyWebApi,
+                     [&]() {
+                         if (spotifydManager.isRunning())
+                             QTimer::singleShot(1500, &spotifyWebApi, &polomodoro::SpotifyWebApi::refreshDevices);
+                     });
+    QObject::connect(&spotifydManager, &polomodoro::SpotifydManager::credentialsChanged, &spotifyWebApi,
+                     &polomodoro::SpotifyWebApi::refreshDevices);
 
     // mpris:artUrl is a real CDN URL — the palette deriver's actual input,
     // where the old build had none until a track loaded in the WebEngineView.
     QObject::connect(&mprisController, &polomodoro::MprisController::playbackChanged, &backgroundController,
                      [&]() {
-                         backgroundManager.setSpotifyArtUrl(mprisController.artUrl());
-                         emit backgroundController.backgroundChanged();
+                         const QString art = mprisController.isSpotifyPlayer()
+                             ? mprisController.artUrl() : QString();
+                         if (backgroundManager.setSpotifyArtUrl(art))
+                             emit backgroundController.backgroundChanged();
                      });
+    auto recomputePalette = [&]() {
+        paletteDeriver.recompute(backgroundManager.currentImageUrl());
+    };
+    QObject::connect(&backgroundController, &polomodoro::BackgroundController::backgroundChanged,
+                     &paletteDeriver, recomputePalette);
+    QObject::connect(&settingsController, &polomodoro::SettingsController::settingsChanged,
+                     &paletteDeriver, recomputePalette);
+    QTimer::singleShot(0, recomputePalette);
 
     polomodoro::DayTimelineModel dayTimeline(taskTree);
     // Any task mutation can add, move or remove a block on the timeline.
@@ -153,8 +178,20 @@ int main(int argc, char *argv[])
     polomodoro::NotificationManager notificationManager;
     QObject::connect(&taskController, &polomodoro::TaskController::targetReached, &app,
                      [&](const QString &, const QString &title) {
-                         notificationManager.notify(QStringLiteral("Target reached"),
-                                                     title + QStringLiteral(" hit its time target."));
+                         if (settings.getBool(QStringLiteral("notifyOnTargetReached"), true))
+                             notificationManager.notify(QStringLiteral("Target reached"),
+                                                         title + QStringLiteral(" hit its time target."));
+                     });
+    QObject::connect(&taskController, &polomodoro::TaskController::taskStarted, &app,
+                     [&](const QString &, const QString &title) {
+                         if (settings.getBool(QStringLiteral("notifyOnTaskStart"), true))
+                             notificationManager.notify(QStringLiteral("Task started"), title);
+                     });
+    QObject::connect(&taskController, &polomodoro::TaskController::deadlineApproaching, &app,
+                     [&](const QString &, const QString &title) {
+                         if (settings.getBool(QStringLiteral("notifyOnEndDateApproaching"), true))
+                             notificationManager.notify(QStringLiteral("Deadline approaching"),
+                                                         title + QStringLiteral(" is due within 24 hours."));
                      });
     QObject::connect(&timerController, &polomodoro::TimerController::workSegmentCompleted, &app,
                      [&](qint64 durationMs) {
@@ -180,8 +217,12 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("SettingsController"), &settingsController);
     ctx->setContextProperty(QStringLiteral("BackgroundController"), &backgroundController);
     ctx->setContextProperty(QStringLiteral("MprisController"), &mprisController);
-    ctx->setContextProperty(QStringLiteral("SpotifydManager"), &spotifydManager);
     ctx->setContextProperty(QStringLiteral("SpotifyWebApi"), &spotifyWebApi);
+    qInfo() << "polomodoro.qml: SpotifyWebApi context property registered"
+            << "authState" << spotifyWebApi.authState()
+            << "clientConfigured" << spotifyWebApi.clientConfigured();
+    ctx->setContextProperty(QStringLiteral("SpotifydManager"), &spotifydManager);
+    ctx->setContextProperty(QStringLiteral("PaletteDeriver"), &paletteDeriver);
     ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
     ctx->setContextProperty(QStringLiteral("DayTimelineModel"), &dayTimeline);
     ctx->setContextProperty(QStringLiteral("timerController"), &timerController);

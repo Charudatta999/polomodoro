@@ -56,6 +56,8 @@ public:
     bool updateTask(const TaskNode &node);
     bool deleteTask(const QString &id);
     bool reparentTask(const QString &id, const QString &newParentId);
+    bool promoteTask(const QString &id);
+    bool demoteTask(const QString &id);
 
     bool startTask(const QString &id);
     bool pauseTask(const QString &id);

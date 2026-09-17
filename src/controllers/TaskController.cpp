@@ -4,6 +4,7 @@
 #include "polomodoro/TaskTree.h"
 #include "polomodoro/TaskTreeModel.h"
 
+#include <QSet>
 #include <QTimer>
 
 namespace polomodoro {
@@ -21,6 +22,7 @@ struct TaskController::Impl {
     bool menuOpen = false;
     bool showCompleted = false;
     QString progressBasis;
+    QSet<QString> deadlineWarned;
 };
 
 TaskController::TaskController(TaskTree &tree, SettingsStore &settings, QObject *parent)
@@ -48,6 +50,7 @@ TaskController::TaskController(TaskTree &tree, SettingsStore &settings, QObject 
     connect(&d->liveTimer, &QTimer::timeout, this, [this]() {
         d->tree->promoteFutureTasks();
         checkTargets();
+        checkDeadlines();
         for (TaskTreeModel *m : {d->model.get(), d->activeModel.get(), d->pendingModel.get(), d->futureModel.get(), d->allModel.get(), d->activeSubtreeModel.get()})
             m->tick();
         emit tasksChanged();
@@ -204,9 +207,13 @@ QString TaskController::createTask(const QString &title, const QString &parentId
 
 void TaskController::startTask(const QString &id)
 {
+    const TaskNode *before = d->tree->findById(id);
+    const QString title = before ? before->title : QString();
     d->tree->startTask(id);
     refreshAllModels();
     emit tasksChanged();
+    if (!title.isEmpty())
+        emit taskStarted(id, title);
 }
 
 void TaskController::pauseTask(const QString &id)
@@ -244,8 +251,21 @@ void TaskController::deleteTask(const QString &id)
     emit tasksChanged();
 }
 
-void TaskController::promote(const QString &id) { Q_UNUSED(id); }
-void TaskController::demote(const QString &id) { Q_UNUSED(id); }
+void TaskController::promote(const QString &id)
+{
+    if (d->tree->promoteTask(id)) {
+        refreshAllModels();
+        emit tasksChanged();
+    }
+}
+
+void TaskController::demote(const QString &id)
+{
+    if (d->tree->demoteTask(id)) {
+        refreshAllModels();
+        emit tasksChanged();
+    }
+}
 void TaskController::requestEdit(const QString &id) { emit editRequested(id); }
 void TaskController::requestCreate(const QString &parentId) { emit createRequested(parentId); }
 void TaskController::loadInto(QObject *editor, const QString &id)
@@ -360,6 +380,22 @@ void TaskController::checkTargets()
             d->tree->saveTask(node->id);
             emit targetReached(node->id, node->title);
         }
+    }
+}
+
+void TaskController::checkDeadlines()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const TaskNode *node : d->tree->allTasks()) {
+        if (!node || !node->scheduledEndAt.isValid() || node->status == TaskStatus::Completed)
+            continue;
+        const qint64 remaining = now.msecsTo(node->scheduledEndAt.toUTC());
+        if (remaining <= 0 || remaining > 24LL * 60 * 60 * 1000)
+            continue;
+        if (d->deadlineWarned.contains(node->id))
+            continue;
+        d->deadlineWarned.insert(node->id);
+        emit deadlineApproaching(node->id, node->title);
     }
 }
 

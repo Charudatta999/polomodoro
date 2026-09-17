@@ -12,8 +12,11 @@ class SettingsController : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool alwaysOnTop READ alwaysOnTop WRITE setAlwaysOnTop NOTIFY settingsChanged)
     Q_PROPERTY(QString backgroundSource READ backgroundSource WRITE setBackgroundSource NOTIFY settingsChanged)
+    Q_PROPERTY(QString backgroundPlacement READ backgroundPlacement WRITE setBackgroundPlacement NOTIFY settingsChanged)
     Q_PROPERTY(int backgroundRotationSec READ backgroundRotationSec WRITE setBackgroundRotationSec NOTIFY settingsChanged)
     Q_PROPERTY(bool notifyOnTargetReached READ notifyOnTargetReached WRITE setNotifyOnTargetReached NOTIFY settingsChanged)
+    Q_PROPERTY(bool notifyOnTaskStart READ notifyOnTaskStart WRITE setNotifyOnTaskStart NOTIFY settingsChanged)
+    Q_PROPERTY(bool notifyOnEndDateApproaching READ notifyOnEndDateApproaching WRITE setNotifyOnEndDateApproaching NOTIFY settingsChanged)
     Q_PROPERTY(int cyclesBeforeLongBreak READ cyclesBeforeLongBreak NOTIFY settingsChanged)
     Q_PROPERTY(bool showDayTimeline READ showDayTimeline WRITE setShowDayTimeline NOTIFY settingsChanged)
     Q_PROPERTY(bool barDropdownExpanded READ barDropdownExpanded WRITE setBarDropdownExpanded NOTIFY settingsChanged)
@@ -37,8 +40,11 @@ public:
 
     bool alwaysOnTop() const;
     QString backgroundSource() const;
+    QString backgroundPlacement() const;
     int backgroundRotationSec() const;
     bool notifyOnTargetReached() const;
+    bool notifyOnTaskStart() const;
+    bool notifyOnEndDateApproaching() const;
     int cyclesBeforeLongBreak() const;
     bool showDayTimeline() const;
     bool barDropdownExpanded() const;
@@ -59,8 +65,11 @@ public:
 
     void setAlwaysOnTop(bool value);
     void setBackgroundSource(const QString &value);
+    void setBackgroundPlacement(const QString &value);
     void setBackgroundRotationSec(int value);
     void setNotifyOnTargetReached(bool value);
+    void setNotifyOnTaskStart(bool value);
+    void setNotifyOnEndDateApproaching(bool value);
     void setShowDayTimeline(bool value);
     void setBarDropdownExpanded(bool value);
     void setWorkMinutes(int value);

@@ -2,9 +2,12 @@
 
 #include "polomodoro/SettingsStore.h"
 
+#include <QLoggingCategory>
 #include <QVariant>
 
 namespace polomodoro {
+
+Q_LOGGING_CATEGORY(lcWin, "polomodoro.window")
 
 struct WindowLayoutManager::Impl {
     SettingsStore &settings;
@@ -61,7 +64,9 @@ WindowLayoutManager::WindowLayoutManager(SettingsStore &settings, QObject *paren
     d->viewModeKey = settings.getString(QStringLiteral("viewMode"), QStringLiteral("expanded"));
     d->alwaysOnTop = settings.getBool(QStringLiteral("alwaysOnTop"));
     d->barDropdownExpanded = settings.getBool(QStringLiteral("barDropdownExpanded"));
+    qCInfo(lcWin) << "init mode" << d->viewModeKey << "alwaysOnTop" << d->alwaysOnTop;
     loadGeometryForCurrentMode();
+    qCInfo(lcWin) << "geometry" << d->x << d->y << d->width << "x" << d->height;
 }
 
 WindowLayoutManager::~WindowLayoutManager() = default;
@@ -108,6 +113,7 @@ void WindowLayoutManager::setMode(int mode)
     const QString key = modeKeyFromInt(mode);
     if (d->viewModeKey == key)
         return;
+    qCInfo(lcWin) << "setMode" << d->viewModeKey << "→" << key;
     d->viewModeKey = key;
     d->settings.setString(QStringLiteral("viewMode"), key);
     if (mode == 1 && d->settings.getBool(QStringLiteral("barAutoAlwaysOnTop"), true))
@@ -138,8 +144,15 @@ void WindowLayoutManager::rememberGeometry(int x, int y, int w, int h)
     // against persisting transient geometry, but this is the single choke point
     // for every write, so validating here keeps one stray resize echo from
     // poisoning the stored layout for a mode.
-    if (!isValidGeometryForMode(d->viewModeKey, w, h))
+    if (!isValidGeometryForMode(d->viewModeKey, w, h)) {
+        qCInfo(lcWin) << "reject geometry for" << d->viewModeKey << w << "x" << h;
         return;
+    }
+    d->x = x;
+    d->y = y;
+    d->width = w;
+    d->height = h;
+    qCInfo(lcWin) << "rememberGeometry" << d->viewModeKey << x << y << w << "x" << h;
     saveGeometry(d->viewModeKey, x, y, w, h);
 }
 

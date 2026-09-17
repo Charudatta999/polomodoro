@@ -6,15 +6,15 @@ import Polomodoro
 // Overlay, not push: the timer must not reflow mid-session.
 Drawer {
     id: root
-    parent: Overlay.overlay
     edge: Qt.LeftEdge
     width: 400
     y: 0
-    height: Overlay.overlay ? Overlay.overlay.height : 0
+    height: parent ? parent.height : 0
     interactive: true
-    modal: true
-    dim: true
-    Overlay.modal: Rectangle { color: Qt.rgba(0.024, 0.027, 0.035, 0.55) }
+    // Overlay.modal on a transparent frameless window punches alpha through
+    // the whole UI (wallpaper shows through panels) and can stick after close.
+    modal: false
+    dim: false
 
     enter: Transition { NumberAnimation { property: "position"; to: 1; duration: Theme.dEnter; easing.type: Easing.OutQuint } }
     exit:  Transition { NumberAnimation { property: "position"; to: 0; duration: Theme.dEnter; easing.type: Easing.OutQuint } }

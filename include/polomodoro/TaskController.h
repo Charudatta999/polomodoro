@@ -80,12 +80,15 @@ signals:
     void tasksChanged();
     void menuOpenChanged();
     void targetReached(const QString &taskId, const QString &title);
+    void taskStarted(const QString &taskId, const QString &title);
+    void deadlineApproaching(const QString &taskId, const QString &title);
     void editRequested(const QString &taskId);
     void createRequested(const QString &parentId);
 
 private:
     void refreshAllModels();
     void checkTargets();
+    void checkDeadlines();
 
     struct Impl;
     std::unique_ptr<Impl> d;
