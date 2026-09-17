@@ -89,6 +89,7 @@ struct SpotifyWebApi::Impl {
     QString currentDeviceName;
     QVariantList playlists;
     QVariantList results;
+    QString pendingPlayUri; // set when play() had no device yet and is waiting on a fetchDevices() round-trip
 
     explicit Impl(SettingsStore &s) : settings(s) {}
 };
@@ -402,6 +403,12 @@ void SpotifyWebApi::fetchDevices()
         d->currentDeviceId = activeId;
         d->currentDeviceName = activeName;
         emit devicesChanged();
+
+        if (!d->pendingPlayUri.isEmpty()) {
+            const QString uri = d->pendingPlayUri;
+            d->pendingPlayUri.clear();
+            play(uri);
+        }
     });
 }
 
@@ -512,8 +519,37 @@ void SpotifyWebApi::search(const QString &query)
 
 void SpotifyWebApi::play(const QString &uri)
 {
-    if (d->accessToken.isEmpty() || d->currentDeviceId.isEmpty())
+    if (d->accessToken.isEmpty())
         return;
+
+    // currentDeviceId only ever gets set from a device Spotify already
+    // reports as "active" — but nothing becomes active until something
+    // plays there, so the very first play() of a session had no device to
+    // target and silently did nothing. Fall back to this machine's own
+    // device (isLocal, matched by spotifyDeviceName) from the last-known
+    // device list before giving up.
+    QString deviceId = d->currentDeviceId;
+    if (deviceId.isEmpty()) {
+        for (const QVariant &v : d->devices) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("isLocal")).toBool()) {
+                deviceId = m.value(QStringLiteral("id")).toString();
+                break;
+            }
+        }
+    }
+    if (deviceId.isEmpty() && d->devices.isEmpty()) {
+        // Devices haven't been fetched yet this session (or genuinely none
+        // exist) — try once more and resume this play once the list is in.
+        d->pendingPlayUri = uri;
+        fetchDevices();
+        return;
+    }
+    if (deviceId.isEmpty()) {
+        qWarning("SpotifyWebApi::play: no target device — open the device "
+                 "picker and select one (spotifyd not yet visible to Spotify Connect?).");
+        return;
+    }
 
     QJsonObject body;
     // Track/episode URIs go in "uris"; playlist/album/artist play as a context.
@@ -523,10 +559,15 @@ void SpotifyWebApi::play(const QString &uri)
         body[QStringLiteral("context_uri")] = uri;
 
     QNetworkRequest req = authedRequest(
-        QStringLiteral("/me/player/play?device_id=") + d->currentDeviceId, d->accessToken);
+        QStringLiteral("/me/player/play?device_id=") + deviceId, d->accessToken);
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
     QNetworkReply *reply = d->net.put(req, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            qWarning("SpotifyWebApi::play: request failed: %s (body: %s)",
+                     qUtf8Printable(reply->errorString()), reply->readAll().constData());
+    });
 }
 
 void SpotifyWebApi::transferTo(const QString &deviceId)

@@ -635,6 +635,27 @@ WebEngine entirely.**
   states (binary missing / starting / running-but-nothing-selected-yet)
   instead of the stale "Start spotifyd yourself" copy, and updated the
   README's Dependencies and Notes sections.
+- **Found and fixed a real deadlock in `SpotifyWebApi::play()`**: the user
+  reported clicking play on a playlist did nothing. `play()` required
+  `d->currentDeviceId` to already be non-empty, but that field is only ever
+  populated from a device Spotify's API reports as `is_active` — and
+  nothing becomes active until something plays there first. First-ever play
+  of a session had no device to target and silently did nothing, forever.
+  Fixed by falling back to the local (`isLocal`) device from the last-known
+  device list, and — if the device list itself hasn't been fetched yet —
+  queuing the URI (`d->pendingPlayUri`) and calling `fetchDevices()`,
+  replaying the play once the list arrives. Also replaced the bare
+  early-return with a `qWarning` when truly no device is resolvable.
+  **Live-tested against the real account** and found the actual current
+  blocker is upstream of any code fix: `/me/player/devices` returns zero
+  devices right now, because `spotifyd`'s Zeroconf discovery mode doesn't
+  register with the account until the user opens Spotify (phone/desktop/
+  web) and manually selects "Polomodoro" from the Connect device list at
+  least once — a one-time pairing step inherent to Spotify Connect, not
+  something Polomodoro's code can skip. Updated `DevicePopover`'s "no
+  devices" copy (previously stale — told the user to "start spotifyd"
+  manually, which no longer applies now that it auto-launches) to name
+  this actual next step instead.
 
 ## Known gaps / next session
 

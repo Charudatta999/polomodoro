@@ -73,7 +73,9 @@ Popup {
             Layout.fillWidth: true
             Layout.margins: Theme.md
             visible: SpotifyWebApi.devices.length === 0
-            text: "No devices found. Start spotifyd or open Spotify anywhere."
+            text: SpotifydManager.running
+                ? "No devices yet. Open Spotify anywhere and select “" + SettingsController.spotifyDeviceName + "” from the Connect device list."
+                : "No devices found. Open Spotify anywhere, or check Settings → Music if spotifyd isn't running."
             wrapMode: Text.WordWrap
             font.family: Theme.fontFamily; font.pixelSize: 11; color: Theme.textDim
         }
