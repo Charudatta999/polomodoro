@@ -572,6 +572,32 @@ WebEngine entirely.**
   call, which correctly fails against Spotify's real token endpoint since
   the code is fake, sending `authState` back to `none`). The process
   survived both, where it reliably crashed before the fix.
+- **Sign-in completed for real** (user's own login, own credentials) — first
+  full end-to-end success. Surfaced two more real bugs against live data:
+  1. **Every playlist showed "0 tracks."** `fetchPlaylists()` read the track
+     count from `tracks.total`, which is what Spotify's public docs say a
+     `SimplifiedPlaylistObject` uses — but this account's actual live
+     responses put it under `items.total` instead (confirmed by dumping the
+     raw JSON of a real playlist via a temporary debug hook). Fixed by
+     checking `tracks` first, falling back to `items`.
+  2. **Search silently did nothing.** `search()` hardcoded `limit=20`, which
+     Spotify's docs list as a valid value (1–50, default 20) — but this app
+     is in Development Mode (not granted Extended Quota Mode), and Spotify
+     rejects it with `400 Invalid limit` for that quota tier. Confirmed by
+     printing the actual outgoing request and the raw error body, then
+     bisecting: dropping `limit` entirely succeeds and Spotify silently
+     applies its own enforced default (5, for this app). Fixed by not
+     forcing a limit at all rather than guessing at an undocumented
+     per-tier cap. Both failures were reaching `if (reply->error() !=
+     NoError) return;` with nothing surfaced anywhere — the same "silent
+     catch" pattern already fixed once this session in `SettingsStore`.
+     Replaced all three occurrences in `SpotifyWebApi` (`search`,
+     `fetchPlaylists`, `fetchDevices`) with a `qWarning` including the
+     response body, so a future quota/schema mismatch is diagnosable
+     without re-adding a debug hook.
+  **Verified against the real account**: playlist track counts now show
+  real numbers (5/20/97/... confirmed via a cropped screenshot), and a live
+  search for "weeknd" returned 5 real track results.
 
 ## Known gaps / next session
 

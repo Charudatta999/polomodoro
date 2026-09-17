@@ -374,8 +374,10 @@ void SpotifyWebApi::fetchDevices()
     QNetworkReply *reply = d->net.get(authedRequest(QStringLiteral("/me/player/devices"), d->accessToken));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning("SpotifyWebApi::fetchDevices: request failed: %s", qUtf8Printable(reply->errorString()));
             return;
+        }
         const QJsonArray arr = QJsonDocument::fromJson(reply->readAll())
                                     .object().value(QStringLiteral("devices")).toArray();
         const QString localName = d->settings.getString(QStringLiteral("spotifyDeviceName"));
@@ -411,8 +413,10 @@ void SpotifyWebApi::fetchPlaylists()
         d->net.get(authedRequest(QStringLiteral("/me/playlists?limit=50"), d->accessToken));
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning("SpotifyWebApi::fetchPlaylists: request failed: %s", qUtf8Printable(reply->errorString()));
             return;
+        }
         const QJsonArray arr = QJsonDocument::fromJson(reply->readAll())
                                     .object().value(QStringLiteral("items")).toArray();
         QVariantList out;
@@ -420,9 +424,14 @@ void SpotifyWebApi::fetchPlaylists()
             const QJsonObject o = v.toObject();
             QVariantMap m;
             m[QStringLiteral("name")] = o.value(QStringLiteral("name")).toString();
+            // The playlist's track-count ref object is documented as
+            // "tracks": {"total": N}, but this account's live responses
+            // return it under the key "items" instead — check both.
+            const QJsonObject trackRef = o.contains(QStringLiteral("tracks"))
+                ? o.value(QStringLiteral("tracks")).toObject()
+                : o.value(QStringLiteral("items")).toObject();
             m[QStringLiteral("subtitle")] =
-                QStringLiteral("%1 tracks").arg(o.value(QStringLiteral("tracks"))
-                                                     .toObject().value(QStringLiteral("total")).toInt());
+                QStringLiteral("%1 tracks").arg(trackRef.value(QStringLiteral("total")).toInt());
             const QJsonArray images = o.value(QStringLiteral("images")).toArray();
             m[QStringLiteral("artUrl")] =
                 images.isEmpty() ? QString() : images.first().toObject().value(QStringLiteral("url")).toString();
@@ -441,7 +450,12 @@ void SpotifyWebApi::search(const QString &query)
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("q"), query);
     q.addQueryItem(QStringLiteral("type"), QStringLiteral("track,playlist"));
-    q.addQueryItem(QStringLiteral("limit"), QStringLiteral("20"));
+    // No explicit limit: apps in Spotify's default "Development mode" quota
+    // (i.e. not granted Extended Quota Mode) get a 400 "Invalid limit" for
+    // values the public docs claim are valid (confirmed live: limit=20
+    // rejected, omitting it entirely succeeds and Spotify applies its own
+    // enforced default — 5, for this app). Forcing a number here would just
+    // be guessing at a cap Spotify doesn't document per quota tier.
 
     QNetworkRequest req = authedRequest(QStringLiteral("/search"), d->accessToken);
     QUrl url = req.url();
@@ -451,8 +465,11 @@ void SpotifyWebApi::search(const QString &query)
     QNetworkReply *reply = d->net.get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
-        if (reply->error() != QNetworkReply::NoError)
+        if (reply->error() != QNetworkReply::NoError) {
+            qWarning("SpotifyWebApi::search: request failed: %s (body: %s)",
+                     qUtf8Printable(reply->errorString()), reply->readAll().constData());
             return;
+        }
         const QJsonObject obj = QJsonDocument::fromJson(reply->readAll()).object();
         QVariantList out;
 
