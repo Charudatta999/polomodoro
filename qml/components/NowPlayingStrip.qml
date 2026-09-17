@@ -71,7 +71,10 @@ Rectangle {
                 font.pixelSize: 11
                 color: root.offline ? Theme.overflow : Theme.textDim
                 elide: Text.ElideRight
-                text: root.noPlayer ? "Start spotifyd, or play from any Spotify app"
+                text: root.noPlayer
+                    ? (!SpotifydManager.binaryFound ? "Install spotifyd (see README), or play from any Spotify app"
+                       : SpotifydManager.running ? "Open Spotify and select “" + SettingsController.spotifyDeviceName + "” as the device"
+                       : "Starting spotifyd…")
                     : root.notLinked ? "Needed for playlists, search and devices"
                     : root.offline ? "Offline — showing last known state"
                     : MprisController.artist

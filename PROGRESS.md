@@ -598,6 +598,43 @@ WebEngine entirely.**
   **Verified against the real account**: playlist track counts now show
   real numbers (5/20/97/... confirmed via a cropped screenshot), and a live
   search for "weeknd" returned 5 real track results.
+- **Added `SpotifydManager`**: Polomodoro now spawns and owns its own
+  `spotifyd` child process (`include/polomodoro/SpotifydManager.h`,
+  `src/SpotifydManager.cpp`, PIMPL) instead of requiring the user to start
+  one manually. Own config/cache dir (`~/.config/polomodoro/spotifyd`, never
+  touches a system-wide `~/.config/spotifyd` the user might already have),
+  own device name (new default: `spotifyDeviceName` now seeds to
+  "Polomodoro" instead of empty — safe now that the app owns this identity,
+  unlike the client id which is never invented). Always passes `--no-daemon`
+  (spotifyd forks and detaches by default, which would escape `QProcess`'s
+  process tree and leak an orphan on exit) and `--dbus-type session` (must
+  match the bus `MprisController` watches). Checks for an already-running
+  spotify-named MPRIS service before launching, so it never launches a
+  second instance on top of one the user runs themselves. Terminates the
+  child on `aboutToQuit` (graceful `terminate()`, falls back to `kill()`
+  after 3s). New setting `spotifyAutoLaunch` (default true) plus a
+  Settings → Music toggle and a status row (Not installed / Running /
+  Stopped + a manual Restart button, exposed via `SpotifydManager`'s
+  `running`/`binaryFound` properties and `restart()`).
+  **Verified live**: confirmed via `pgrep`/`ps` that `spotifyd` actually
+  runs as a real child process with the expected argv
+  (`--no-daemon --cache-path ~/.config/polomodoro/spotifyd --device-name
+  Polomodoro --dbus-type session`), that it's gone (not orphaned) after the
+  app exits, and — after adding `QProcess::ForwardedChannels` so its own
+  stdout/stderr is visible — that it reaches
+  `Starting zeroconf server to advertise on local network`, i.e. it's
+  correctly waiting in Spotify Connect discovery mode (it won't register an
+  MPRIS name until a real playback session starts from the Spotify app
+  selecting "Polomodoro" as the device — that's spotifyd's own behavior, not
+  a bug). Did not live-test the already-running-instance skip path (no
+  reliable way to keep a second dummy spotify-named MPRIS service alive
+  across this sandbox's background-process teardown) — confirmed correct by
+  direct code inspection instead (same standard applied to the MPRIS
+  multi-player heuristic's reverse case earlier this session).
+  Updated `NowPlayingStrip`'s empty state to reflect the new three real
+  states (binary missing / starting / running-but-nothing-selected-yet)
+  instead of the stale "Start spotifyd yourself" copy, and updated the
+  README's Dependencies and Notes sections.
 
 ## Known gaps / next session
 

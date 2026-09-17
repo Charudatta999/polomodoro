@@ -61,7 +61,11 @@ void SettingsStore::seedDefaults()
     // never goes here — see SpotifyWebApi, which uses the system keyring.
     ensure(QStringLiteral("spotifyClientId"), QString());
     ensure(QStringLiteral("spotifyRedirectPort"), QStringLiteral("8888"));
-    ensure(QStringLiteral("spotifyDeviceName"), QString());
+    // Unlike the client id, this is just a Spotify Connect device label, not
+    // an identity — safe to default now that Polomodoro owns launching the
+    // process that uses it (SpotifydManager).
+    ensure(QStringLiteral("spotifyDeviceName"), QStringLiteral("Polomodoro"));
+    ensure(QStringLiteral("spotifyAutoLaunch"), QStringLiteral("true"));
     ensure(QStringLiteral("nowPlayingStripVisible"), QStringLiteral("true"));
     ensure(QStringLiteral("libraryOverlayWidth"), QStringLiteral("520"));
 }

@@ -32,6 +32,7 @@ qt_add_executable(polomodoro
     include/polomodoro/ShutdownGuard.h
     include/polomodoro/WindowLayoutManager.h
     include/polomodoro/MprisController.h
+    include/polomodoro/SpotifydManager.h
     include/polomodoro/SpotifyWebApi.h
     include/polomodoro/TimerController.h
     include/polomodoro/TaskController.h
@@ -49,6 +50,7 @@ qt_add_executable(polomodoro
     src/WindowLayoutManager.cpp
     src/BackgroundManager.cpp
     src/MprisController.cpp
+    src/SpotifydManager.cpp
     src/SpotifyWebApi.cpp
     src/NotificationManager.cpp
     src/controllers/TimerController.cpp

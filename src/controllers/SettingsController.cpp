@@ -124,6 +124,7 @@ bool SettingsController::nowPlayingStripVisible() const { return d->store.getBoo
 int SettingsController::libraryOverlayWidth() const { return d->store.getInt(QStringLiteral("libraryOverlayWidth"), 520); }
 QString SettingsController::spotifyClientId() const { return d->store.getString(QStringLiteral("spotifyClientId")); }
 QString SettingsController::spotifyDeviceName() const { return d->store.getString(QStringLiteral("spotifyDeviceName")); }
+bool SettingsController::spotifyAutoLaunch() const { return d->store.getBool(QStringLiteral("spotifyAutoLaunch"), true); }
 
 void SettingsController::setNowPlayingStripVisible(bool value)
 {
@@ -140,6 +141,12 @@ void SettingsController::setSpotifyClientId(const QString &value)
 void SettingsController::setSpotifyDeviceName(const QString &value)
 {
     d->store.setString(QStringLiteral("spotifyDeviceName"), value.trimmed());
+    emit settingsChanged();
+}
+
+void SettingsController::setSpotifyAutoLaunch(bool value)
+{
+    d->store.setBool(QStringLiteral("spotifyAutoLaunch"), value);
     emit settingsChanged();
 }
 

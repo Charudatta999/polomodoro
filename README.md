@@ -9,8 +9,14 @@ sudo pacman -S qt6-base qt6-declarative cmake ninja gcc spotifyd qtkeychain-qt6
 ```
 
 `spotifyd` is the local Spotify Connect target that transport controls talk to
-over MPRIS — start it (or run any other MPRIS-capable player, or the official
-Spotify client) before expecting the now-playing strip to show anything.
+over MPRIS. Polomodoro launches and owns its own `spotifyd` child process
+automatically (own config/cache dir under `~/.config/polomodoro/spotifyd`,
+device name "Polomodoro" by default) — you don't need to start it yourself,
+just install the package. Open Spotify on any device and select "Polomodoro"
+as the playback target (Spotify Connect), or run any other MPRIS-capable
+player (the official Spotify client, a browser, etc.) and Polomodoro picks
+that up instead. Auto-launch can be turned off in Settings → Music if you'd
+rather run your own `spotifyd` instance.
 `qtkeychain-qt6` is optional but recommended: without it, signing in to
 Spotify's Web API does not survive a restart (the refresh token is kept in
 memory only, deliberately never written to the settings database).
@@ -82,3 +88,8 @@ backup. Copying the database elsewhere does not leak Spotify access.
   prefers one whose service name contains "spotify"; otherwise it follows
   whichever one appeared first, and switches if a spotify-named one appears
   later.
+- `SpotifydManager` never launches a second `spotifyd` if one whose MPRIS
+  service name contains "spotify" is already on the bus (checked once at
+  startup) — it won't collide with an instance you're already running
+  yourself. It always passes `--no-daemon` so the child stays attached to
+  Polomodoro's own process tree and gets terminated (not orphaned) on exit.

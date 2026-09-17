@@ -183,12 +183,41 @@ Popup {
                 }
                 SettingRow {
                     visible: root.section === 4
+                    label: "Auto-start spotifyd"; key: "spotifyAutoLaunch"
+                    PoloToggle {
+                        checked: SettingsController.spotifyAutoLaunch
+                        onToggled: SettingsController.spotifyAutoLaunch = checked
+                    }
+                }
+                // Own device name, own config/cache dir — never the same
+                // spotifyd instance as one the user already runs themselves.
+                SettingRow {
+                    visible: root.section === 4
                     label: "This machine's device name"; key: "spotifyDeviceName"
                     PoloTextField {
                         implicitWidth: 260
                         text: SettingsController.spotifyDeviceName
-                        placeholder: "spotifyd --device-name value"
+                        placeholder: "Polomodoro"
                         onEditingFinished: SettingsController.spotifyDeviceName = text
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "spotifyd status"; key: "SpotifydManager.running"
+                    RowLayout {
+                        spacing: Theme.md
+                        Text {
+                            text: !SpotifydManager.binaryFound ? "Not installed"
+                                : SpotifydManager.running ? "Running" : "Stopped"
+                            font.family: Theme.fontFamily; font.pixelSize: 13
+                            color: SpotifydManager.running ? Theme.accent : Theme.textDim
+                        }
+                        PillButton {
+                            label: "Restart"
+                            small: true
+                            visible: SpotifydManager.binaryFound
+                            onClicked: SpotifydManager.restart()
+                        }
                     }
                 }
                 SettingRow {

@@ -30,6 +30,7 @@ class SettingsController : public QObject {
     Q_PROPERTY(int libraryOverlayWidth READ libraryOverlayWidth NOTIFY settingsChanged)
     Q_PROPERTY(QString spotifyClientId READ spotifyClientId WRITE setSpotifyClientId NOTIFY settingsChanged)
     Q_PROPERTY(QString spotifyDeviceName READ spotifyDeviceName WRITE setSpotifyDeviceName NOTIFY settingsChanged)
+    Q_PROPERTY(bool spotifyAutoLaunch READ spotifyAutoLaunch WRITE setSpotifyAutoLaunch NOTIFY settingsChanged)
 public:
     explicit SettingsController(SettingsStore &store, QObject *parent = nullptr);
     ~SettingsController();
@@ -54,6 +55,7 @@ public:
     int libraryOverlayWidth() const;
     QString spotifyClientId() const;
     QString spotifyDeviceName() const;
+    bool spotifyAutoLaunch() const;
 
     void setAlwaysOnTop(bool value);
     void setBackgroundSource(const QString &value);
@@ -71,6 +73,7 @@ public:
     void setNowPlayingStripVisible(bool value);
     void setSpotifyClientId(const QString &value);
     void setSpotifyDeviceName(const QString &value);
+    void setSpotifyAutoLaunch(bool value);
 
     Q_INVOKABLE int pomodoroWorkMs() const;
     Q_INVOKABLE int pomodoroShortBreakMs() const;

@@ -7,6 +7,7 @@
 #include <polomodoro/SettingsController.h>
 #include <polomodoro/SettingsStore.h>
 #include <polomodoro/ShutdownGuard.h>
+#include <polomodoro/SpotifydManager.h>
 #include <polomodoro/SpotifyWebApi.h>
 #include <polomodoro/TaskController.h>
 #include <polomodoro/TaskTree.h>
@@ -122,7 +123,10 @@ int main(int argc, char *argv[])
     // Playback pivot (2026-09-17): Qt WebEngine and the embedded Spotify web
     // player are gone. Transport is whatever MPRIS player is on the session
     // bus (spotifyd, the official client, anything); browsing/search/devices
-    // are the Spotify Web API over OAuth PKCE.
+    // are the Spotify Web API over OAuth PKCE. SpotifydManager owns spawning
+    // spotifyd itself so a system-wide install is enough — the user doesn't
+    // have to start it by hand.
+    polomodoro::SpotifydManager spotifydManager(settings);
     polomodoro::MprisController mprisController;
     polomodoro::SpotifyWebApi spotifyWebApi(settings);
 
@@ -176,6 +180,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty(QStringLiteral("SettingsController"), &settingsController);
     ctx->setContextProperty(QStringLiteral("BackgroundController"), &backgroundController);
     ctx->setContextProperty(QStringLiteral("MprisController"), &mprisController);
+    ctx->setContextProperty(QStringLiteral("SpotifydManager"), &spotifydManager);
     ctx->setContextProperty(QStringLiteral("SpotifyWebApi"), &spotifyWebApi);
     ctx->setContextProperty(QStringLiteral("WindowLayoutManager"), &windowLayout);
     ctx->setContextProperty(QStringLiteral("DayTimelineModel"), &dayTimeline);
