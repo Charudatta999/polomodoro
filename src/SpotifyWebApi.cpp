@@ -175,6 +175,10 @@ void SpotifyWebApi::beginPkce()
     connect(d->pkceServer.get(), &QTcpServer::newConnection, this, [this]() {
         QTcpSocket *socket = d->pkceServer->nextPendingConnection();
         connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+            // The request line can arrive split across reads; wait for a
+            // full line rather than parsing a partial one.
+            if (!socket->canReadLine())
+                return;
             const QByteArray requestLine = socket->readLine();
             // "GET /callback?code=...&state=... HTTP/1.1"
             const QList<QByteArray> parts = requestLine.split(' ');
@@ -199,7 +203,15 @@ void SpotifyWebApi::beginPkce()
                 if (error.isEmpty() && state == d->pendingState && !code.isEmpty())
                     exchangeCodeForToken(code);
             }
-            d->pkceServer.reset(); // one redirect is all we need
+            // socket is a child of pkceServer: resetting the server here,
+            // synchronously, would destroy socket while this very handler is
+            // still executing on its call stack (readyRead is one of
+            // socket's own signals) — undefined behavior, crashes shortly
+            // after. Detach and defer both deletions to the next event loop
+            // turn instead.
+            socket->setParent(nullptr);
+            socket->deleteLater();
+            QTimer::singleShot(0, this, [this]() { d->pkceServer.reset(); }); // one redirect is all we need
         });
     });
 

@@ -547,6 +547,31 @@ WebEngine entirely.**
   browser session"). This is the entire local-machine half of the PKCE flow
   confirmed working end-to-end; only the actual login-and-approve step in
   the browser remains, which needs the user's own Spotify credentials.
+- **Found and fixed a real segfault**: the user completed a real Spotify
+  login and the app crashed (SIGSEGV) right after the redirect landed. Root
+  cause in `SpotifyWebApi::beginPkce()`'s callback handler
+  (`src/SpotifyWebApi.cpp`): the accepted `QTcpSocket` is a child of
+  `d->pkceServer`, and the handler ended with `d->pkceServer.reset()` —
+  synchronously destroying the `QTcpServer`, which destroys its child
+  `socket`, *while still executing inside that socket's own `readyRead`
+  handler on the call stack*. Deleting a `QObject` mid-emission of its own
+  signal is undefined behavior in Qt and crashes shortly after. Fixed by
+  detaching the socket (`setParent(nullptr)`) and deferring both the
+  socket's `deleteLater()` and the server's `reset()` to the next event
+  loop turn via `QTimer::singleShot(0, ...)`. Also added a
+  `socket->canReadLine()` guard before parsing, since the HTTP request line
+  isn't guaranteed to arrive in a single `readyRead` (a pre-existing latent
+  bug in the same handler, not the cause of this crash but the same class
+  of "assumes a single TCP read == one message" issue).
+  **Verified the fix**, not just reasoned about it: reproduced the exact
+  crash with a temporary debug hook (`POLOMODORO_TEST_PKCE_CALLBACK`) that
+  called `beginPkce()` and then used `curl` to hit
+  `127.0.0.1:8888/callback` exactly as a browser redirect would — both with
+  a mismatched `state` (error path) and a matching `state` with a fake
+  `code` (success path through to a real `exchangeCodeForToken()` network
+  call, which correctly fails against Spotify's real token endpoint since
+  the code is fake, sending `authState` back to `none`). The process
+  survived both, where it reliably crashed before the fix.
 
 ## Known gaps / next session
 
