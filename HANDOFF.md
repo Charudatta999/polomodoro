@@ -34,14 +34,12 @@ without it the Spotify refresh token doesn't survive a restart.
 
 ## ⚠️ Current git state — read before touching anything
 
-**HEAD is `f3bc00a` on branch `fix/window-geometry-and-calendar`, but the
-working tree has substantial uncommitted work on top of it** — roughly 44
-tracked files modified plus 6 new untracked files (`PaletteDeriver.h/.cpp`,
-`WindowDragFrame.qml`, `WindowResizeFrame.qml`, two new SVG icons). This is
-real, working, already-verified-buildable code, not scratch/WIP — see
-"What's uncommitted" below for what it actually does. It has **not been
-reviewed or committed yet**. Do that before starting new work, or at least
-don't assume `git log` reflects current behavior — it doesn't.
+**HEAD is `20aca3b` on branch `fix/window-geometry-and-calendar`.** The
+large uncommitted feature pass described below (PaletteDeriver, window
+shell rewrite, spotifyd device login, task promote/demote) has been
+reviewed and committed in four commits (`07ba05b`, `c34f288`, `a71148e`,
+`20aca3b` — see `PROGRESS.md` session 12 for what's in each). `git log`
+now reflects current behavior.
 
 The `Renders/` directory shows as 63 deleted files in `git status` —
 **leave that alone**, it's deliberately unstaged per standing instruction
@@ -84,10 +82,9 @@ clearly labeled in `SettingsView.qml` with disambiguating subtext so this
 doesn't need re-explaining in the UI itself, but it's easy to forget when
 reading the code cold.
 
-## What's uncommitted right now (the ~44 modified + 6 new files)
+## What landed in the last feature pass (now committed)
 
-In one paragraph: a real feature pass beyond what's in `PROGRESS.md`'s
-session log. The window shell was rewritten (transparent rounded window,
+In one paragraph: the window shell was rewritten (transparent rounded window,
 custom drag/resize frames, three background placement modes); `PaletteDeriver`
 was added to make the "derived at runtime" accent system in the rulebook
 actually work instead of sitting static; `SpotifydManager` gained the
@@ -96,17 +93,16 @@ stop handling; `MprisController` gained a player list and Web-API transport
 proxying for remote devices; `Theme.qml`'s `textFaint` was corrected to the
 rulebook's exact `#868FA0` (it had drifted to `#6A7280` — the value the
 rulebook explicitly calls out as having failed contrast); `SettingsView.qml`
-got the disambiguated dual-Spotify-auth UI; icons for the background-source
-toggle moved from emoji to real SVGs (`resources/icons/art.svg`,
-`wallpaper.svg`). It **builds clean and renders with zero QML warnings**
-(verified via the screenshot hook just before writing this document — the
-rounded window and a real derived (non-green) accent color are both visibly
-present). It has not been screenshotted against every spec page per rulebook
-§0, and has not been committed.
+got the disambiguated dual-Spotify-auth UI; task promote/demote went from
+no-op stubs to real reparenting; task-start and deadline-approaching
+notifications were wired up; icons for the background-source toggle moved
+from emoji to real SVGs. It **builds clean and renders with zero QML
+warnings** and, as of 2026-09-18, the user has confirmed `spotifyd` device
+login and playback actually work end to end.
 
 Recommended next step: do a rulebook §0 pass (screenshot each touched
-surface, name differences against the spec pages) before committing, same
-discipline as every prior session in `PROGRESS.md`.
+surface, name differences against the spec pages) — not yet done for this
+batch, same discipline as every prior session in `PROGRESS.md`.
 
 ## Known open items
 
@@ -115,15 +111,11 @@ open items as of the last committed session were):
 
 1. **Real Wayland pointer input** (drag-to-move, resize, `DateTimeField`
    calendar clicks) has never been tested with a real pointer — only
-   headlessly. The window-chrome rewrite in the uncommitted work above was
-   specifically aimed at this, but "aimed at" is not "verified" — this still
-   needs a hands-on pass on a real Hyprland/Wayland session.
-2. **`spotifyd` device-level login** — mechanism now exists
-   (`SpotifydManager::authenticate()`, wired into Settings → Music), but
-   whether the user has actually completed it (does `spotifyd` currently
-   have librespot credentials, i.e. does `SpotifydManager.credentialsPresent`
-   read true) was not confirmed at the end of the last conversation. Check
-   that before assuming playback works end-to-end.
+   headlessly. The window-chrome rewrite above was specifically aimed at
+   this, but "aimed at" is not "verified" — this still needs a hands-on
+   pass on a real Hyprland/Wayland session.
+2. ~~`spotifyd` device-level login~~ — confirmed working by the user
+   (2026-09-18). Playback works end to end.
 
 Everything else tracked in `PROGRESS.md`'s "Known gaps" sections up through
 the last committed session (`f3bc00a`) was closed out — geometry defaults,

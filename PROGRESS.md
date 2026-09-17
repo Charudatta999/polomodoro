@@ -707,25 +707,56 @@ WebEngine entirely.**
    takes over from a plain one already attached; the reverse (staying
    attached to spotify when a plain player later appears) is unambiguous by
    inspection of `onNameOwnerChanged`'s condition.
-9. **`spotifyd` still needs its own separate device-level login before
-   playback actually works.** The Web API OAuth token (item 7) only lets
-   Polomodoro call the *Web API* — browse, search, tell an
-   already-connected device what to play. It grants zero playback
-   capability by itself, and does not authenticate `spotifyd` as a device;
-   that is a completely separate credential. Right now `spotifyd` runs in
-   Zeroconf mode, which needs a **one-time manual pairing**: open Spotify on
-   any already-logged-in device (phone/desktop/web) and select "Polomodoro"
-   from the Connect device list once. Until that happens, `/me/player/
-   devices` returns zero devices and nothing can play (confirmed live: this
-   was the actual cause of a "clicking play does nothing" report, on top of
-   a separate real deadlock in `play()` that's now fixed — see the
-   `play()` fix entry above). Alternative not yet built: direct
-   username/password (or cached session token) auth baked into `spotifyd`'s
-   own launch config would skip the phone-tap entirely and register it as a
-   device on startup, at the cost of storing the actual Spotify account
-   password/session token in the keyring — a materially bigger secret than
-   the scope-limited, revocable OAuth token currently handled. User was
-   mid-decision on this tradeoff at end of session.
+9. ~~`spotifyd` still needs its own separate device-level login before
+   playback actually works~~ — resolved in session 12: instead of
+   Zeroconf phone-tap pairing or storing a real account password,
+   `SpotifydManager::authenticate()` runs `spotifyd`'s own built-in
+   `authenticate` subcommand, which is a real librespot OAuth device-login
+   flow (no password, works for phone/OTP-only accounts). Settings →
+   Music now has a dedicated "spotifyd login" row for this, separate from
+   the Web API "Playlist account" row. **User confirmed `spotifyd` is
+   working** (2026-09-18) — device auth completed and playback works.
+
+## Session 12 (2026-09-18, review and commit uncommitted feature pass)
+
+A large body of already-working but uncommitted code had accumulated in
+the tree since session 11's last commit (`f3bc00a`) — reviewed all of it
+file-by-file, verified a clean rebuild and a warning-free render (screenshot
+showed the rounded window, a real non-green derived accent color, and a
+live MPRIS track with artwork), then split it into four commits:
+
+- `07ba05b` — **PaletteDeriver**: derives `Theme.accent`/`accentHover`/
+  `breakColor`/`overflow`/`muted` from the live background image at
+  runtime (OKLab k-means clustering, clamped to the rulebook's L/C range).
+  This was previously a spec requirement with no code behind it. Also
+  fixed `Theme.textFaint`, which had drifted from the rulebook's `#868FA0`
+  to `#6A7280` (the value the rulebook explicitly flags as failing
+  contrast).
+- `c34f288` — **Window shell rewrite**: transparent rounded borderless
+  window (`QQuickWindow::setDefaultAlphaBuffer` + `MultiEffect` mask)
+  with custom drag (`startSystemMove()`, one call per press to avoid
+  Hyprland retiling on every motion) and resize frames, replacing the
+  earlier `DragHandler` approach. Adds three background placement modes
+  and a first-run wallpaper-folder picker.
+- `a71148e` — **spotifyd device login + remote-playback proxy**: see gap
+  item 9 above for the auth side. `SpotifyWebApi` also gained a mirrored
+  remote-playback surface (title/artist/art/position from `/me/player`)
+  and transport commands, and `MprisController` now proxies transport to
+  it when the active target is a remote Connect device — the now-playing
+  strip no longer branches on player type. Settings UI disambiguates the
+  two Spotify logins explicitly.
+- `20aca3b` — **Task promote/demote** (`TaskTree::promoteTask`/
+  `demoteTask` were literally `Q_UNUSED` no-op stubs — now real), task-
+  start and deadline-approaching (24h lookahead) notifications wired to
+  their own Settings toggles, a real bug fix in
+  `WindowLayoutManager::rememberGeometry` (it validated incoming geometry
+  but never wrote it into `Impl`, so in-memory queries between saves were
+  stale), and `SettingsStore::integrityReport()`/`exportSessionsCsv()`
+  replacing empty stub bodies with real SQLite introspection/CSV export.
+
+Not yet done: a rulebook §0 screenshot-and-compare pass against every
+touched spec page, and real Wayland pointer testing of the new drag/resize
+frames (gap item 5, still open).
 
 ## Resume instructions
 
