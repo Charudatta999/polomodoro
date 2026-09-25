@@ -2,6 +2,14 @@
 
 Linux desktop Pomodoro + stopwatch app with nested task tracking, SQLite persistence, MPRIS-based Spotify control, and three view modes (expanded, progress bar, PiP).
 
+![Expanded view: focus timer, day timeline and now-playing strip](docs/screenshots/expanded.png)
+
+![Task drawer with Active / Pending / Future / All tabs](docs/screenshots/tasks-drawer.png)
+
+![Progress-bar mode: a slim always-on-top bar with timer, transport controls and current task](docs/screenshots/bar-mode.png)
+
+*Top to bottom: expanded view (the accent colour is derived from the current wallpaper or album art), the task drawer, and progress-bar mode.*
+
 ## Dependencies (Arch/CachyOS)
 
 ```bash
@@ -68,22 +76,57 @@ player Spotify last marked active (those stale IDs are what produced HTTP 404).
 
 ## Installing and verifying releases
 
-Release packages are built and signed by CI. Each GitHub Release contains:
-`polomodoro-<ver>-x86_64.pkg.tar.zst`, its detached signature (`.sig`),
-`SHA256SUMS` with `SHA256SUMS.asc`, and the signing public key.
+Release packages are built and signed by CI (Arch/CachyOS, x86_64). Each
+[GitHub Release](https://github.com/Charudatta999/polomodoro/releases)
+contains:
 
-```bash
-# 1. Import the signing key and check the fingerprint matches:
-curl -sL https://raw.githubusercontent.com/Charudatta999/polomodoro/master/packaging/polomodoro-signing-key.asc | gpg --import
-gpg --fingerprint "Polomodoro CI"    # 9E01 8D0C AFA7 F62F 6E98  7061 84E6 68F7 4B97 C45F
+| File | What it is |
+|---|---|
+| `polomodoro-<ver>-x86_64.pkg.tar.zst` (+ `.sig`) | the package and its detached signature |
+| `polomodoro-debug-<ver>-x86_64.pkg.tar.zst` (+ `.sig`) | debug symbols, optional |
+| `SHA256SUMS` (+ `.asc`) | checksums, signed |
+| `polomodoro-signing-key.asc` | the public signing key |
 
-# 2. Verify, then install:
-gpg --verify polomodoro-*.pkg.tar.zst.sig polomodoro-*.pkg.tar.zst
-sha256sum -c SHA256SUMS
-sudo pacman -U polomodoro-*.pkg.tar.zst
+Tags with a suffix such as `v0.1.0-beta.1` are published as **pre-releases**.
+Package versions use `_` instead of `-` (`0.1.0_beta.1`) because pacman forbids
+hyphens in versions.
+
+Signing key fingerprint — check it before trusting anything:
+
+```
+9E01 8D0C AFA7 F62F 6E98  7061 84E6 68F7 4B97 C45F
 ```
 
-To build the package yourself: `packaging/make-source-tarball.sh <version>`,
+```bash
+# 1. Download the release (private repo: needs `gh auth login`; use --pattern to limit)
+gh release download v0.1.0-beta.1 --repo Charudatta999/polomodoro
+
+# 2. Import the key and confirm the fingerprint above matches
+gpg --import polomodoro-signing-key.asc
+gpg --fingerprint "Polomodoro CI"
+
+# 3. Verify signatures and checksums
+gpg --verify polomodoro-0.1.0_beta.1-1-x86_64.pkg.tar.zst.sig \
+             polomodoro-0.1.0_beta.1-1-x86_64.pkg.tar.zst
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c SHA256SUMS
+
+# 4. Let pacman trust the key. pacman keeps its OWN keyring, so `gpg --import`
+#    above does not count; without this, `pacman -U` fails with
+#    "required key missing from keyring".
+sudo pacman-key --add polomodoro-signing-key.asc
+sudo pacman-key --lsign-key 9E018D0CAFA7F62F6E98706184E668F74B97C45F
+
+# 5. Install (the main package only; the glob skips the -debug package)
+sudo pacman -U polomodoro-[0-9]*.pkg.tar.zst
+```
+
+Only run step 4 after you have confirmed the fingerprint in step 2.
+
+The key expires 2028-09-24; releases signed after that will show an expired
+key until it is extended.
+
+To build the package yourself instead: `packaging/make-source-tarball.sh <version>`,
 then `cd packaging/arch && POLOMODORO_PKGVER=<version> makepkg -si`.
 
 ## Data
