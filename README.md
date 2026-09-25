@@ -66,6 +66,26 @@ but play 404s / nothing uses spotifyd."
 Play always targets the local "Polomodoro" device, not whatever phone or web
 player Spotify last marked active (those stale IDs are what produced HTTP 404).
 
+## Installing and verifying releases
+
+Release packages are built and signed by CI. Each GitHub Release contains:
+`polomodoro-<ver>-x86_64.pkg.tar.zst`, its detached signature (`.sig`),
+`SHA256SUMS` with `SHA256SUMS.asc`, and the signing public key.
+
+```bash
+# 1. Import the signing key and check the fingerprint matches:
+curl -sL https://raw.githubusercontent.com/Charudatta999/polomodoro/master/packaging/polomodoro-signing-key.asc | gpg --import
+gpg --fingerprint "Polomodoro CI"    # 9E01 8D0C AFA7 F62F 6E98  7061 84E6 68F7 4B97 C45F
+
+# 2. Verify, then install:
+gpg --verify polomodoro-*.pkg.tar.zst.sig polomodoro-*.pkg.tar.zst
+sha256sum -c SHA256SUMS
+sudo pacman -U polomodoro-*.pkg.tar.zst
+```
+
+To build the package yourself: `packaging/make-source-tarball.sh <version>`,
+then `cd packaging/arch && POLOMODORO_PKGVER=<version> makepkg -si`.
+
 ## Data
 
 Database: `~/.config/polomodoro/polomodoro.db`

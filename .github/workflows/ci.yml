@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Everything runs in Arch: it is the only place the target package format
+  # (pacman) and the real dependency versions (Qt 6.x, spotifyd) exist.
+  ARCH_DEPS: base-devel git cmake ninja qt6-base qt6-declarative qt6-svg spotifyd qtkeychain-qt6 namcap gnupg
+
+jobs:
+  build:
+    name: Build (Arch, Release)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_DEPS
+
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Smoke-test staged install
+        run: |
+          DESTDIR="$PWD/stage" cmake --install build
+          test -x stage/usr/local/bin/polomodoro || test -x stage/bin/polomodoro
+          find stage -type f | sort
+
+      - name: Headless start-up check
+        # Catches QML load errors and missing plugins (e.g. qt6-svg). The app
+        # self-screenshots and exits; offscreen platform needs no display.
+        env:
+          QT_QPA_PLATFORM: offscreen
+          POLOMODORO_SCREENSHOT: /tmp/smoke.png
+          POLOMODORO_SCREENSHOT_DELAY: '3000'
+          POLOMODORO_VERBOSE: '1'
+          HOME: /tmp/polohome
+        run: |
+          mkdir -p "$HOME"
+          timeout 30 build/polomodoro 2>&1 | tee /tmp/smoke.log || true
+          if grep -E "QML WARN|module .* is not installed|Cannot assign|is not a type" /tmp/smoke.log; then
+            echo "::error::QML warnings during start-up"; exit 1
+          fi
+
+  package:
+    name: Package and sign (.pkg.tar.zst)
+    needs: build
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    permissions:
+      contents: read
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed $ARCH_DEPS
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: ver
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            base=$(grep -oP 'project\(polomodoro VERSION \K[0-9.]+' CMakeLists.txt)
+            # pkgver may not contain '-', so use .r<count>.g<sha> (Arch VCS convention)
+            v="${base}.r$(git rev-list --count HEAD).g$(git rev-parse --short HEAD)"
+          fi
+          echo "pkgver=$v" >> "$GITHUB_OUTPUT"
+          echo "Version: $v"
+
+      - name: Build source tarball and package
+        run: |
+          packaging/make-source-tarball.sh "${{ steps.ver.outputs.pkgver }}" packaging/arch
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE/packaging/arch' && \
+            POLOMODORO_PKGVER='${{ steps.ver.outputs.pkgver }}' PKGDEST='$GITHUB_WORKSPACE/dist' \
+            makepkg -f --noconfirm --nodeps"
+          ls -l dist
+
+      - name: Lint package (namcap)
+        run: |
+          namcap packaging/arch/PKGBUILD || true
+          namcap dist/*.pkg.tar.zst || true
+
+      - name: Import signing key
+        id: sign
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "::error::GPG_PRIVATE_KEY secret is required to publish a release"; exit 1
+            fi
+            echo "::warning::GPG_PRIVATE_KEY not set (fork PR or unconfigured repo) — package left UNSIGNED"
+            echo "signed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "allow-loopback-pinentry" > "$GNUPGHOME/gpg-agent.conf"
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          fpr=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')
+          echo "KEY_FPR=$fpr" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+          cd dist
+          for f in *.pkg.tar.zst; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+                --local-user "$fpr" --detach-sign --output "$f.sig" "$f"
+          done
+          sha256sum *.pkg.tar.zst > SHA256SUMS
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" \
+              --local-user "$fpr" --detach-sign --armor --output SHA256SUMS.asc SHA256SUMS
+          gpg --batch --armor --export "$fpr" > polomodoro-signing-key.asc
+
+      - name: Verify signatures
+        if: steps.sign.outputs.signed == 'true'
+        run: |
+          cd dist
+          for f in *.pkg.tar.zst; do gpg --batch --verify "$f.sig" "$f"; done
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Verify package installs and contains expected files
+        run: |
+          pacman -U --noconfirm dist/*.pkg.tar.zst
+          test -x /usr/bin/polomodoro
+          test -f /usr/share/applications/polomodoro.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/polomodoro.svg
+          pacman -Ql polomodoro
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polomodoro-pkg
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: polomodoro-pkg
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

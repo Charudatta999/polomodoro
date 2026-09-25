@@ -1,0 +1,27 @@
+# Maintainer: Charudatta Jadhav <cjawsome999@gmail.com>
+#
+# Builds from a source tarball named polomodoro-$pkgver.tar.gz sitting next to
+# this file. CI produces it with packaging/make-source-tarball.sh; for a local
+# build run that script first, then `makepkg -si`.
+pkgname=polomodoro
+pkgver=${POLOMODORO_PKGVER:-1.0.0}
+pkgrel=1
+pkgdesc='Pomodoro and stopwatch timer with nested task tracking, Spotify via spotifyd/MPRIS'
+arch=('x86_64')
+url='https://github.com/Charudatta999/polomodoro'
+license=('custom')
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'spotifyd' 'qtkeychain-qt6')
+makedepends=('cmake' 'ninja' 'gcc')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')  # tarball is generated in the same pipeline run
+
+build() {
+  cmake -S "$pkgname-$pkgver" -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+}

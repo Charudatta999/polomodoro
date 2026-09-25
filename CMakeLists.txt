@@ -84,3 +84,10 @@ if(POLOMODORO_STATIC_STDCXX)
 endif()
 
 install(TARGETS polomodoro RUNTIME DESTINATION bin)
+
+install(FILES packaging/polomodoro.desktop
+        DESTINATION share/applications)
+install(FILES resources/icons/polomodoro.svg
+        DESTINATION share/icons/hicolor/scalable/apps)
+install(FILES README.md
+        DESTINATION share/doc/polomodoro)

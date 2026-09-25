@@ -14,3 +14,10 @@ compile_commands.json
 claude-designfiles/
 Renders/
 external-binaries/
+
+# Packaging output
+packaging/arch/*.tar.gz
+packaging/arch/*.pkg.tar.*
+packaging/arch/pkg/
+packaging/arch/src/
+packaging/arch/build/

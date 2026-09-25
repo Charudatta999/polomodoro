@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Polomodoro
+GenericName=Pomodoro Timer
+Comment=Pomodoro and stopwatch timer with nested task tracking
+Exec=polomodoro
+Icon=polomodoro
+Terminal=false
+Categories=Utility;Office;
+Keywords=pomodoro;timer;stopwatch;tasks;focus;
+StartupWMClass=polomodoro
