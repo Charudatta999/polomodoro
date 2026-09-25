@@ -4,6 +4,9 @@
     </qresource>
     <qresource prefix="/wallpapers">
         <file alias="default.png">wallpapers/default.png</file>
+        <file alias="grad1.png">wallpapers/grad1.png</file>
+        <file alias="grad2.png">wallpapers/grad2.png</file>
+        <file alias="grad3.png">wallpapers/grad3.png</file>
     </qresource>
     <qresource prefix="/fonts">
         <file alias="Geist-Regular.ttf">fonts/Geist-Regular.ttf</file>
@@ -21,6 +24,9 @@
         <file alias="settings.svg">icons/settings.svg</file>
         <file alias="reset.svg">icons/reset.svg</file>
         <file alias="tasks.svg">icons/tasks.svg</file>
+        <file alias="device.svg">icons/device.svg</file>
+        <file alias="wallpaper.svg">icons/wallpaper.svg</file>
+        <file alias="art.svg">icons/art.svg</file>
     </qresource>
     <qresource prefix="/qml">
         <file alias="main.qml">../qml/main.qml</file>
@@ -42,10 +48,13 @@
         <file alias="components/TaskEditor.qml">../qml/components/TaskEditor.qml</file>
         <file alias="components/BackgroundView.qml">../qml/components/BackgroundView.qml</file>
         <file alias="components/BackgroundSourceToggle.qml">../qml/components/BackgroundSourceToggle.qml</file>
-        <file alias="components/SpotifyDrawer.qml">../qml/components/SpotifyDrawer.qml</file>
-        <file alias="components/SpotifyMediaControls.qml">../qml/components/SpotifyMediaControls.qml</file>
+        <file alias="components/NowPlayingStrip.qml">../qml/components/NowPlayingStrip.qml</file>
+        <file alias="components/LibraryOverlay.qml">../qml/components/LibraryOverlay.qml</file>
+        <file alias="components/DevicePopover.qml">../qml/components/DevicePopover.qml</file>
         <file alias="components/OverallProgressBar.qml">../qml/components/OverallProgressBar.qml</file>
         <file alias="components/SubtaskProgressDropdown.qml">../qml/components/SubtaskProgressDropdown.qml</file>
+        <file alias="components/WindowResizeFrame.qml">../qml/components/WindowResizeFrame.qml</file>
+        <file alias="components/WindowDragFrame.qml">../qml/components/WindowDragFrame.qml</file>
         <file alias="components/WindowChrome.qml">../qml/components/WindowChrome.qml</file>
         <file alias="components/NowPlayingLabel.qml">../qml/components/NowPlayingLabel.qml</file>
         <file alias="components/ProgressTrough.qml">../qml/components/ProgressTrough.qml</file>

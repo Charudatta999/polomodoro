@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import Polomodoro
 
 // No Save button: every control writes through SettingsController to the
@@ -10,6 +11,7 @@ Popup {
     id: root
     parent: Overlay.overlay
     modal: true
+    dim: false
     width: 640
     height: 460
     padding: 0
@@ -128,6 +130,26 @@ Popup {
                 }
                 SettingRow {
                     visible: root.section === 1
+                    label: "Wallpaper shows"; key: "backgroundPlacement"
+                    PoloSegmented {
+                        options: ["Frame", "Middle", "Both"]
+                        currentIndex: SettingsController.backgroundPlacement === "frame" ? 0
+                                    : SettingsController.backgroundPlacement === "middle" ? 1 : 2
+                        onPicked: SettingsController.backgroundPlacement =
+                            index === 0 ? "frame" : index === 1 ? "middle" : "both"
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 1
+                    label: "Wallpaper folder"; key: "backgroundUserPath"
+                    PillButton {
+                        label: "Choose folder"
+                        small: true
+                        onClicked: wallpaperFolder.open()
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 1
                     label: "Rotation interval"; key: "backgroundRotationSec"
                     Slider { from: 60; to: 1800; stepSize: 30; value: SettingsController.rotationSec; onMoved: SettingsController.rotationSec = value }
                 }
@@ -146,6 +168,142 @@ Popup {
                     }
                 }
                 SettingRow {
+                    visible: root.section === 3
+                    label: "Target reached"; key: "notifyOnTargetReached"
+                    PoloToggle {
+                        checked: SettingsController.notifyOnTargetReached
+                        onToggled: SettingsController.notifyOnTargetReached = checked
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 3
+                    label: "Task started"; key: "notifyOnTaskStart"
+                    PoloToggle {
+                        checked: SettingsController.notifyOnTaskStart
+                        onToggled: SettingsController.notifyOnTaskStart = checked
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 3
+                    label: "End date approaching"; key: "notifyOnEndDateApproaching"
+                    PoloToggle {
+                        checked: SettingsController.notifyOnEndDateApproaching
+                        onToggled: SettingsController.notifyOnEndDateApproaching = checked
+                    }
+                }
+                // Client id is the only piece of PKCE config that lives here:
+                // it is public by design (no secret ships). The refresh token
+                // this produces never touches this settings table — see
+                // SpotifyWebApi, which stores it in the system keyring.
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Playlist account"; key: "authState · Web API PKCE, not spotifyd"
+                    RowLayout {
+                        spacing: Theme.md
+                        Text {
+                            text: SpotifyWebApi.authState === "linked" ? "Signed in"
+                                : SpotifyWebApi.authState === "linking" ? "Signing in…"
+                                : SpotifyWebApi.authState === "expired" ? "Session expired"
+                                : "Not signed in"
+                            font.family: Theme.fontFamily; font.pixelSize: 13
+                            color: SpotifyWebApi.authState === "linked" ? Theme.accent : Theme.textPrimary
+                        }
+                        PillButton {
+                            label: SpotifyWebApi.authState === "linked" ? "Sign out"
+                                 : SpotifyWebApi.authState === "linking" ? "Waiting…"
+                                 : "Sign in"
+                            small: true
+                            primary: SpotifyWebApi.authState !== "linked"
+                            enabled: SettingsController.spotifyClientId.length > 0
+                                     && SpotifyWebApi.authState !== "linking"
+                            onClicked: SpotifyWebApi.authState === "linked" ? SpotifyWebApi.signOut() : SpotifyWebApi.beginPkce()
+                        }
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Client ID"; key: "spotifyClientId"
+                    PoloTextField {
+                        implicitWidth: 220
+                        text: SettingsController.spotifyClientId
+                        placeholder: "From developer.spotify.com"
+                        onEditingFinished: SettingsController.spotifyClientId = text
+                        onTextChanged: if (text !== SettingsController.spotifyClientId)
+                            SettingsController.spotifyClientId = text
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Auto-start spotifyd"; key: "spotifyAutoLaunch"
+                    PoloToggle {
+                        checked: SettingsController.spotifyAutoLaunch
+                        onToggled: SettingsController.spotifyAutoLaunch = checked
+                    }
+                }
+                // Own device name, own config/cache dir — never the same
+                // spotifyd instance as one the user already runs themselves.
+                SettingRow {
+                    visible: root.section === 4
+                    label: "This machine's device name"; key: "spotifyDeviceName"
+                    PoloTextField {
+                        implicitWidth: 260
+                        text: SettingsController.spotifyDeviceName
+                        placeholder: "Polomodoro"
+                        onEditingFinished: SettingsController.spotifyDeviceName = text
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "spotifyd login"; key: "librespot OAuth — not the Client ID above"
+                    RowLayout {
+                        spacing: Theme.md
+                        Text {
+                            text: SpotifydManager.authenticating ? "Signing in…"
+                                : SpotifydManager.credentialsPresent ? "Signed in"
+                                : "Not signed in"
+                            font.family: Theme.fontFamily; font.pixelSize: 13
+                            color: SpotifydManager.credentialsPresent ? Theme.accent : Theme.textDim
+                        }
+                        PillButton {
+                            label: SpotifydManager.authenticating ? "Waiting…"
+                                 : SpotifydManager.credentialsPresent ? "Sign in again"
+                                 : "Sign in"
+                            small: true
+                            primary: !SpotifydManager.credentialsPresent
+                            enabled: SpotifydManager.binaryFound && !SpotifydManager.authenticating
+                            onClicked: SpotifydManager.authenticate()
+                        }
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "spotifyd status"; key: "running"
+                    RowLayout {
+                        spacing: Theme.md
+                        Text {
+                            text: !SpotifydManager.binaryFound ? "Not installed"
+                                : SpotifydManager.running ? "Running" : "Stopped"
+                            font.family: Theme.fontFamily; font.pixelSize: 13
+                            color: SpotifydManager.running ? Theme.accent : Theme.textDim
+                        }
+                        PillButton {
+                            label: "Restart"
+                            small: true
+                            visible: SpotifydManager.binaryFound
+                            onClicked: SpotifydManager.restart()
+                        }
+                    }
+                }
+                SettingRow {
+                    visible: root.section === 4
+                    label: "Now-playing strip"; key: "nowPlayingStripVisible"
+                    PoloToggle {
+                        checked: SettingsController.nowPlayingStripVisible
+                        onToggled: SettingsController.nowPlayingStripVisible = checked
+                    }
+                }
+
+                SettingRow {
                     visible: root.section === 5
                     label: "Export sessions"; key: "CSV to ~/Documents"
                     PillButton { label: "Export"; onClicked: SettingsController.exportCsv() }
@@ -155,9 +313,15 @@ Popup {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     text: SettingsController.integrityReport
-                    font.family: Theme.monoFamily; font.pixelSize: 11; color: "#E8489B"
+                    font.family: Theme.monoFamily; font.pixelSize: 11; color: Theme.textDim
                 }
             }
         }
+    }
+
+    FolderDialog {
+        id: wallpaperFolder
+        title: "Choose a wallpaper folder"
+        onAccepted: BackgroundController.setUserFolder(selectedFolder)
     }
 }

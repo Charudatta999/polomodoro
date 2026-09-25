@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Polomodoro
 
@@ -14,7 +15,7 @@ Rectangle {
     radius: Theme.rRow
     color: hover.hovered ? Theme.surfaceRaised : Theme.surface
     border.width: 1
-    border.color: task.overdue ? "#E8489B" : (selected ? Theme.accent : Theme.line)
+    border.color: task.overdue ? Theme.destructive : (selected ? Theme.accent : Theme.line)
     property bool selected: false
     opacity: task.status === "completed" ? 0.55 : (task.startable ? 1.0 : 0.45)
     enabled: task.startable || task.status === "active" || task.status === "paused"
@@ -85,12 +86,13 @@ Rectangle {
                 text: root.task.badgeText
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.fEyebrow
-                color: root.task.overdue ? "#E8489B"
+                color: root.task.overdue ? Theme.destructive
                      : root.task.overTarget ? Theme.overflow : Theme.textFaint
             }
         }
 
-        // Hidden at rest to keep a long list quiet; faded in on hover.
+        // Hidden at rest, per spec: "lifecycle buttons fade in from 0 → 1
+        // (they are hidden at rest to keep the list quiet)".
         RowLayout {
             spacing: Theme.sm - 2
             opacity: hover.hovered || root.task.status === "active" ? 1 : 0
@@ -99,11 +101,13 @@ Rectangle {
             IconButton {
                 visible: root.task.status === "active"
                 glyph: "pause"
+                tooltip: "Pause"
                 onClicked: TaskController.pauseTask(root.task.id)
             }
             IconButton {
                 visible: root.task.status === "paused"
                 glyph: "play"; filled: true
+                tooltip: "Resume"
                 onClicked: TaskController.resumeTask(root.task.id)
             }
             PillButton {
@@ -115,10 +119,42 @@ Rectangle {
             IconButton {
                 visible: root.task.status === "active" || root.task.status === "paused"
                 glyph: "stop"
+                tooltip: "Stop"
                 onClicked: TaskController.stopTask(root.task.id)
             }
         }
     }
 
-    TaskRowMenu { id: rowMenu; task: root.task }
+    TaskRowMenu {
+        id: rowMenu
+        task: root.task
+        onDeleteRequested: {
+            // Subtasks are removed by an ON DELETE CASCADE in the schema, so
+            // deleting a parent silently takes its whole subtree with it.
+            if (root.task.hasChildren)
+                confirmDelete.open()
+            else
+                TaskController.deleteTask(root.task.id)
+        }
+    }
+
+    Dialog {
+        id: confirmDelete
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Delete this task?"
+        standardButtons: Dialog.Cancel | Dialog.Ok
+        onAccepted: TaskController.deleteTask(root.task.id)
+
+        Text {
+            width: 260
+            wrapMode: Text.WordWrap
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fBodyS
+            color: Theme.textPrimary
+            text: "\"" + root.task.title + "\" has subtasks. Deleting it will "
+                  + "also delete everything nested under it. This cannot be undone."
+        }
+    }
 }

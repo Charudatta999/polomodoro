@@ -12,12 +12,23 @@ Rectangle {
 
     readonly property var soleTarget: TaskController.soleTargetedActiveTask
 
-    DragHandler {
-        target: null
-        onActiveChanged: if (active && Window.window) Window.window.startSystemMove()
-    }
-    TapHandler {
-        onDoubleTapped: WindowLayoutManager.setMode(0)
+    // Background drag. A MouseArea declared first sits below every control, so
+    // the transport, progress bar and buttons still get their own events and
+    // only bare background starts a move — "draggable by their background".
+    //
+    // A MouseArea rather than a DragHandler: Wayland validates startSystemMove
+    // against the input serial of the event that triggered it, and a handler
+    // that only activates after the drag threshold presents a stale serial,
+    // which the compositor quietly refuses.
+    MouseArea {
+        id: backgroundDrag
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        // On first motion rather than on press, so a plain click still lands
+        // (PiP double-click expands) while the serial is still current.
+        onPressed: if (Window.window && Window.window.resetSystemMove) Window.window.resetSystemMove()
+        onPositionChanged: if (pressed && Window.window && Window.window.beginSystemMove) Window.window.beginSystemMove()
+        onDoubleClicked: WindowLayoutManager.setMode(0)
     }
 
     ColumnLayout {

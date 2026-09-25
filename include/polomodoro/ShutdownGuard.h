@@ -16,6 +16,11 @@ public:
 
     void startHeartbeat(int intervalMs = 10000);
 
+private slots:
+    // Targeted by QDBusConnection::connect's string-based SLOT() API, which
+    // requires a real moc-registered slot.
+    void onPrepareForShutdown(bool starting);
+
 private:
     struct Impl;
     std::unique_ptr<Impl> d;

@@ -16,28 +16,57 @@ Rectangle {
 
     readonly property bool isActive: Window.window && Window.window.viewMode === 1
 
+    // Only for the dropdown resizing while already in bar mode. Entering bar
+    // mode is main.qml's job (WindowLayoutManager's stored geometry), and this
+    // used to also fire then via onIsActiveChanged — isActive flips synchronously
+    // when Window.window.viewMode changes, which is before main.qml's
+    // Qt.callLater(_applyWindowGeometryNow) has run. That raced two resize
+    // requests back to back on the same frameless Wayland surface (an
+    // immediate height-only one from here, then main.qml's width+height one),
+    // and the second reliably lost its width component — bar mode kept the
+    // previous mode's width. Wayland xdg_toplevel resizes are a request/ack
+    // cycle, not a fire-and-forget property write; issuing two in the same
+    // event loop turn is not safe to assume both land.
     function syncBarHeight() {
         if (!isActive || !Window.window)
             return
-        Window.window.height = dropdownOpen ? openHeight : barHeight
+        const h = dropdownOpen ? openHeight : barHeight
+        Window.window.maximumHeight = h
+        Window.window.height = h
     }
-
-    Component.onCompleted: syncBarHeight()
-
-    onIsActiveChanged: syncBarHeight()
 
     onDropdownOpenChanged: {
         SettingsController.barDropdownExpanded = dropdownOpen
         syncBarHeight()
     }
 
-    DragHandler {
-        target: null
-        onActiveChanged: if (active && Window.window) Window.window.startSystemMove()
+    // Background drag. A MouseArea declared first sits below every control, so
+    // the transport, progress bar and buttons still get their own events and
+    // only bare background starts a move — "draggable by their background".
+    //
+    // A MouseArea rather than a DragHandler: Wayland validates startSystemMove
+    // against the input serial of the event that triggered it, and a handler
+    // that only activates after the drag threshold presents a stale serial,
+    // which the compositor quietly refuses.
+    MouseArea {
+        id: backgroundDrag
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        // On first motion rather than on press, so a plain click still lands
+        // (PiP double-click expands) while the serial is still current.
+        onPressed: {
+            if (Window.window && Window.window.resetSystemMove)
+                Window.window.resetSystemMove()
+            if (Window.window)
+                Window.window.startSystemMove()
+        }
     }
 
     ColumnLayout {
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.dropdownOpen ? root.openHeight : root.barHeight
         spacing: 0
 
         RowLayout {
@@ -59,7 +88,24 @@ Rectangle {
             }
 
             Divider {}
-            SpotifyMediaControls { Layout.preferredWidth: 96 }
+            // SpotifyMediaControls was deleted with the WebEngine pivot; the
+            // updated reference bundle's ProgressBarView.qml still names it
+            // (stale — the pivot only reached NowPlayingLabel there), so this
+            // is the compact MPRIS transport in its place, matching the
+            // prev/playpause/next set in NowPlayingStrip.
+            RowLayout {
+                Layout.preferredWidth: 96
+                spacing: Theme.xs + 2
+                enabled: MprisController.available
+                opacity: enabled ? 1 : 0.4
+                IconButton { glyph: "prev"; small: true; onClicked: MprisController.previous() }
+                IconButton {
+                    glyph: MprisController.isPlaying ? "pause" : "play"
+                    filled: true
+                    onClicked: MprisController.togglePlayPause()
+                }
+                IconButton { glyph: "next"; small: true; onClicked: MprisController.next() }
+            }
             Divider {}
 
             OverallProgressBar {

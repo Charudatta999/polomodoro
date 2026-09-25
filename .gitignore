@@ -3,3 +3,14 @@ build/
 *.user
 *.autosave
 compile_commands.json
+
+# Agent/tooling session artifacts
+.playwright-mcp/
+.claude/settings.local.json
+
+# Design reference drop from the visual-spec handoff. Large (~1.6M) and
+# duplicated from the handoff zip, so it is kept in the working copy rather
+# than in history.
+claude-designfiles/
+Renders/
+external-binaries/

@@ -11,7 +11,7 @@ Rectangle {
     signal clicked()
 
     implicitHeight: small ? 26 : 40
-    implicitWidth: text.implicitWidth + (small ? Theme.sm * 2 + 2 : Theme.xl - 4) * 2
+    implicitWidth: Math.max(small ? 72 : 96, text.implicitWidth + (small ? Theme.sm * 2 + 2 : Theme.xl - 4) * 2)
     radius: Theme.rPill
     color: primary ? (hover.hovered ? Theme.accentHover : Theme.accent)
          : hover.hovered ? Theme.line : Theme.surfaceRaised
@@ -30,7 +30,7 @@ Rectangle {
         font.pixelSize: root.small ? 10.5 : 13
         font.weight: root.primary ? Font.DemiBold : Font.Normal
         color: root.primary ? Theme.onAccent
-             : root.destructive ? "#E8489B"
+             : root.destructive ? Theme.destructive
              : root.selected ? Theme.accent : Theme.textDim
     }
 

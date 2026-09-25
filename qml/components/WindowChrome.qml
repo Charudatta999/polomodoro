@@ -3,20 +3,36 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Polomodoro
 
-RowLayout {
+Item {
     id: root
     signal tasksClicked()
     signal settingsClicked()
-    spacing: Theme.md
+    implicitHeight: 38
+    Layout.fillWidth: true
+    Layout.preferredHeight: 38
+    Layout.maximumHeight: 38
+    Layout.fillHeight: false
+    height: 38
 
-    DragHandler {
-        target: null
-        onActiveChanged: if (active && Window.window) Window.window.startSystemMove()
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        onPressed: {
+            if (!Window.window)
+                return
+            if (Window.window.resetSystemMove)
+                Window.window.resetSystemMove()
+            Window.window.startSystemMove()
+        }
     }
 
-    PillButton { label: "☰   Tasks"; onClicked: root.tasksClicked() }
+    RowLayout {
+        anchors.fill: parent
+        spacing: Theme.md
 
-    Text {
+        PillButton { label: "☰   Tasks"; onClicked: root.tasksClicked() }
+
+        Text {
         text: "POLOMODORO"
         font.family: Theme.monoFamily
         font.pixelSize: 12
@@ -24,7 +40,7 @@ RowLayout {
         color: Qt.alpha(Theme.textPrimary, 0.62)
     }
 
-    Item { Layout.fillWidth: true }
+    Item { Layout.fillWidth: true; Layout.fillHeight: false; implicitHeight: 38 }
 
     IconButton {
         glyph: "pin"
@@ -83,5 +99,6 @@ RowLayout {
         glyph: "close"
         tooltip: "Close"
         onClicked: Qt.quit()
+    }
     }
 }

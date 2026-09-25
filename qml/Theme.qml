@@ -11,7 +11,10 @@ QtObject {
     readonly property color line:          "#272B34"
     readonly property color textPrimary:   "#EDEFF3"
     readonly property color textDim:       "#9AA1AE"
-    readonly property color textFaint:     "#6A7280"
+    readonly property color textFaint:     "#868FA0"
+
+    // Rose preset — overdue/destructive only. Not a fifth derived hue.
+    readonly property color destructive:   "#E8489B"
 
     // ---- Derived palette. PaletteDeriver writes these five. ----
     property color accent:      "#1ED760"
@@ -45,7 +48,9 @@ QtObject {
     readonly property int rTrough: 4
     readonly property int rRow: 8
     readonly property int rPanel: 12
+    readonly property int rWindow: 28
     readonly property int rPill: 999
+    readonly property int windowGrip: 28
 
     // ---- Panels ----
     readonly property real panelOpacity: 0.82

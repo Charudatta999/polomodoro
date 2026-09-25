@@ -3,9 +3,12 @@
 #include "polomodoro/SettingsStore.h"
 #include "polomodoro/TimerEngine.h"
 
+#include <QLoggingCategory>
 #include <QTimer>
 
 namespace polomodoro {
+
+Q_LOGGING_CATEGORY(lcTimer, "polomodoro.timer")
 
 struct TimerController::Impl {
     TimerEngine *engine = nullptr;
@@ -29,8 +32,10 @@ TimerController::TimerController(TimerEngine &engine, SettingsStore &settings, Q
     connect(&d->tick, &QTimer::timeout, this, [this]() {
         const PomodoroPhase before = d->engine->phase();
         d->engine->tick(100);
-        if (before == PomodoroPhase::Work && d->engine->phase() != PomodoroPhase::Work && d->segmentElapsed > 0)
+        if (before == PomodoroPhase::Work && d->engine->phase() != PomodoroPhase::Work && d->segmentElapsed > 0) {
+            qCInfo(lcTimer) << "work segment complete" << d->segmentElapsed << "ms → phase" << int(d->engine->phase());
             emit workSegmentCompleted(d->segmentElapsed);
+        }
         if (d->engine->phase() == PomodoroPhase::Work && d->engine->isRunning())
             d->segmentElapsed += 100;
         emit timeChanged();
@@ -132,6 +137,7 @@ QString TimerController::formattedTime() const { return d->engine->formattedTime
 
 void TimerController::start()
 {
+    qCInfo(lcTimer) << "start" << mode() << phase() << formattedTime();
     d->engine->start();
     d->tick.start();
     emit isRunningChanged();
@@ -139,6 +145,7 @@ void TimerController::start()
 
 void TimerController::pause()
 {
+    qCInfo(lcTimer) << "pause" << mode() << phase() << formattedTime();
     d->engine->pause();
     d->tick.stop();
     emit isRunningChanged();
@@ -154,6 +161,7 @@ void TimerController::toggle()
 
 void TimerController::reset()
 {
+    qCInfo(lcTimer) << "reset";
     d->engine->reset();
     d->segmentElapsed = 0;
     emit timeChanged();
@@ -163,6 +171,7 @@ void TimerController::reset()
 
 void TimerController::skipPhase()
 {
+    qCInfo(lcTimer) << "skipPhase from" << phase();
     d->engine->skipPhase();
     d->segmentElapsed = 0;
     emit phaseChanged();
@@ -176,6 +185,7 @@ void TimerController::toggleMode()
 
 void TimerController::setMode(const QString &mode)
 {
+    qCInfo(lcTimer) << "setMode" << this->mode() << "→" << mode;
     d->engine->setMode(mode == QStringLiteral("stopwatch") ? TimerMode::Stopwatch : TimerMode::Pomodoro);
     d->segmentElapsed = 0;
     emit modeChanged();

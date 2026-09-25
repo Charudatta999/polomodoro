@@ -18,7 +18,7 @@ Rectangle {
         spacing: 3
 
         Repeater {
-            model: [{ key: "wallpaper", glyph: "🖼" }, { key: "spotify", glyph: "🎵" }]
+            model: [{ key: "wallpaper", glyph: "wallpaper" }, { key: "spotify", glyph: "art" }]
             Rectangle {
                 Layout.preferredHeight: 32
                 Layout.preferredWidth: 46
@@ -26,11 +26,12 @@ Rectangle {
                 readonly property bool on: BackgroundController.source === modelData.key
                 color: on ? Theme.accent : "transparent"
                 Behavior on color { ColorAnimation { duration: Theme.dStandard } }
-                Text {
+                Image {
                     anchors.centerIn: parent
-                    text: modelData.glyph
-                    font.pixelSize: 13
-                    color: parent.on ? Theme.onAccent : Qt.alpha(Theme.textPrimary, 0.7)
+                    width: 14
+                    height: 14
+                    source: "qrc:/icons/" + modelData.glyph + ".svg"
+                    sourceSize: Qt.size(28, 28)
                 }
                 TapHandler { onTapped: BackgroundController.source = modelData.key }
             }
