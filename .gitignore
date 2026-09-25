@@ -12,3 +12,5 @@ compile_commands.json
 # duplicated from the handoff zip, so it is kept in the working copy rather
 # than in history.
 claude-designfiles/
+Renders/
+external-binaries/
